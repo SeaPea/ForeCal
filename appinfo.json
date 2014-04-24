@@ -1,44 +1,73 @@
 {
-  "versionCode" : 1,
-  "capabilities" : [
-    "location"
-  ],
-  "longName" : "ForeCal",
-  "shortName" : "ForeCal",
-  "resources" : {
-    "media" : [
-      {
-        "name" : "IMAGE_SUN",
-        "type" : "png",
-        "file" : "sun.png"
-      },
-      {
-        "file" : "rain.png",
-        "name" : "IMAGE_RAIN",
-        "type" : "png"
-      },
-      {
-        "name" : "IMAGE_CLOUD",
-        "type" : "png",
-        "file" : "cloud.png"
-      },
-      {
-        "file" : "snow.png",
-        "name" : "IMAGE_SNOW",
-        "type" : "png"
-      }
-    ]
-  },
-  "uuid" : "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
-  "companyName" : "SeaPea",
-  "versionLabel" : "0.1.0",
-  "watchapp" : {
-    "only_show_on_communication" : 0,
-    "watchface" : 1
-  },
-  "appKeys" : {
-    "city" : 2,
-    "icon" : 0,
-    "temperature" : 1
-  }
+    "versionLabel": "0.1.0",
+    "capabilities": [
+        "location"
+    ],
+    "shortName": "ForeCal",
+    "longName": "ForeCal",
+    "versionCode": 1,
+    "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
+    "resources": {
+        "media": [
+            {
+                "type": "png",
+                "file": "images/Batt25.png",
+                "name": "IMAGE_BATT_25"
+            },
+            {
+                "type": "png",
+                "file": "images/Batt50.png",
+                "name": "IMAGE_BATT_50"
+            },
+            {
+                "type": "png",
+                "file": "images/Batt75.png",
+                "name": "IMAGE_BATT_75"
+            },
+            {
+                "type": "png",
+                "file": "images/Batt100.png",
+                "name": "IMAGE_BATT_100"
+            },
+            {
+                "type": "png",
+                "file": "images/BattCharge.png",
+                "name": "IMAGE_BATT_CHARGE"
+            },
+            {
+                "type": "png",
+                "file": "images/BT.png",
+                "name": "IMAGE_BT"
+            },
+            {
+                "type": "png",
+                "file": "images/snow.png",
+                "name": "IMAGE_SNOW"
+            },
+            {
+                "type": "png",
+                "file": "images/cloud.png",
+                "name": "IMAGE_CLOUD"
+            },
+            {
+                "type": "png",
+                "file": "images/rain.png",
+                "name": "IMAGE_RAIN"
+            },
+            {
+                "type": "png",
+                "file": "images/sun.png",
+                "name": "IMAGE_SUN"
+            }
+        ]
+    },
+    "watchapp": {
+        "watchface": true
+    },
+    "appKeys": {
+        "city": 2,
+        "icon": 0,
+        "temperature": 1
+    },
+    "companyName": "SeaPea"
 }
