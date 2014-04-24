@@ -1,0 +1,44 @@
+{
+  "versionCode" : 1,
+  "capabilities" : [
+    "location"
+  ],
+  "longName" : "ForeCal",
+  "shortName" : "ForeCal",
+  "resources" : {
+    "media" : [
+      {
+        "name" : "IMAGE_SUN",
+        "type" : "png",
+        "file" : "sun.png"
+      },
+      {
+        "file" : "rain.png",
+        "name" : "IMAGE_RAIN",
+        "type" : "png"
+      },
+      {
+        "name" : "IMAGE_CLOUD",
+        "type" : "png",
+        "file" : "cloud.png"
+      },
+      {
+        "file" : "snow.png",
+        "name" : "IMAGE_SNOW",
+        "type" : "png"
+      }
+    ]
+  },
+  "uuid" : "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
+  "companyName" : "SeaPea",
+  "versionLabel" : "0.1.0",
+  "watchapp" : {
+    "only_show_on_communication" : 0,
+    "watchface" : 1
+  },
+  "appKeys" : {
+    "city" : 2,
+    "icon" : 0,
+    "temperature" : 1
+  }
+}
