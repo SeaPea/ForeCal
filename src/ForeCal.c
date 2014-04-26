@@ -182,14 +182,40 @@ static void current_layer_draw(Layer *layer, GContext *ctx) {
   graphics_draw_line(ctx, GPoint(0, 57), GPoint(144, 57));
 }
 
+// Draw dates for a single week in the calendar
+static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len, int prev_mon_len, GColor font_color, int ypos) {
+  
+  int curr_date;
+  char curr_date_str[3];
+  
+  graphics_context_set_text_color(ctx, font_color);
+  
+  for (int d = 0; d < 7; d++) {
+    // Calculate the current date being drawn
+    if ((start_date + d) < 1)
+      curr_date = start_date + d + prev_mon_len;
+    else if ((start_date + d) > curr_mon_len)
+      curr_date = start_date + d - curr_mon_len;
+    else
+      curr_date = start_date + d;
+    
+    // Draw the date text in the correct calendar cell
+    snprintf(curr_date_str, 3, "%d", curr_date);
+    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, ypos, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+}
+
 static void cal_layer_draw(Layer *layer, GContext *ctx) {
+  // Paint calendar background
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, GRect(0, 0, 144, 46), 0, GCornerNone);
   
+  // Paint inverted row background
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, GRect(0, 11, 144, 11), 0, GCornerNone);
   graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
   
+  // Draw day separators
   graphics_context_set_stroke_color(ctx, GColorWhite);
   for (int c = 1; c < 7; c++) {
     graphics_draw_line(ctx, GPoint((c*20) + c - 1, 11), GPoint((c*20) + c - 1, 46));
@@ -213,60 +239,21 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
     graphics_draw_text(ctx, weekdays[(d + startday) % 7], curr_font, GRect((d * 20) + d, -4, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
   
+  // Calculate leap year and month lengths
   int leap_year = (((1900 + t->tm_year) % 100) == 0 ? 0 : (((1900 + t->tm_year) % 4) == 0) ? 1 : 0);
   int prev_mon = (t->tm_mon) == 0 ? 12 : t->tm_mon;
   int curr_mon = t->tm_mon + 1;
   int prev_mon_len = 31 - ((prev_mon == 2) ? (3 - leap_year) : ((prev_mon - 1) % 7 % 2));
   int curr_mon_len = 31 - ((curr_mon == 2) ? (3 - leap_year) : ((curr_mon - 1) % 7 % 2));
   
-  int start_date;
-  int curr_date;
-  char curr_date_str[3];
-  
   // Draw previous week dates
-  start_date = t->tm_mday - t->tm_wday - 7;
-  graphics_context_set_text_color(ctx, GColorWhite);
-  
-  for (int d = 0; d < 7; d++) {
-    if ((start_date + d) < 1)
-      curr_date = start_date + d + prev_mon_len;
-    else
-      curr_date = start_date + d;
-    
-    snprintf(curr_date_str, 3, "%d", curr_date);
-    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, 7, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-  }
-  
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7, curr_mon_len, prev_mon_len, GColorWhite, 7);
   // Draw current week dates
-  start_date = t->tm_mday - t->tm_wday;
-  graphics_context_set_text_color(ctx, GColorBlack);
-  
-  for (int d = 0; d < 7; d++) {
-    if ((start_date + d) < 1)
-      curr_date = start_date + d + prev_mon_len;
-    else if ((start_date + d) > curr_mon_len)
-      curr_date = start_date + d - curr_mon_len;
-    else
-      curr_date = start_date + d;
-    
-    snprintf(curr_date_str, 3, "%d", curr_date);
-    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, 19, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-  }
-  
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday, curr_mon_len, prev_mon_len, GColorBlack, 19);
   // Draw next week dates
-  start_date = t->tm_mday - t->tm_wday + 7;
-  graphics_context_set_text_color(ctx, GColorWhite);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7, curr_mon_len, prev_mon_len, GColorWhite, 31);
   
-  for (int d = 0; d < 7; d++) {
-    if ((start_date + d) > curr_mon_len)
-      curr_date = start_date + d - curr_mon_len;
-    else
-      curr_date = start_date + d;
-    
-    snprintf(curr_date_str, 3, "%d", curr_date);
-    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, 31, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-  }
-  
+  // Invert current date colors to highlight it
   layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((t->tm_wday * 20) + t->tm_wday, 23, 19, 11));
 }
 
