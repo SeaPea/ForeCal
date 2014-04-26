@@ -11,16 +11,23 @@ static GBitmap *bt_icon = NULL;
 static BitmapLayer *bt_layer = NULL;
 static GBitmap *batt_icon = NULL;
 static BitmapLayer *batt_layer = NULL;
+
+static const uint32_t const bt_warn_pattern[] = { 1000, 500, 1000 };
 //static TextLayer *temperature_layer;
 //static TextLayer *city_layer;
 //static BitmapLayer *icon_layer;
 //static GBitmap *icon_bitmap = NULL;
 
+static Layer *cal_layer = NULL;
+static InverterLayer *curr_date_layer = NULL;
+static int startday = 0;
+static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
+
 //static AppSync sync;
 //static uint8_t sync_buffer[64];
 
-static char current_time[6];
-static char current_date[] = "Sun Jan 10";
+static char current_time[] = "00:00";
+static char current_date[] = "Sun Jan 01";
 
 /*enum WeatherKey {
   WEATHER_ICON_KEY = 0x0,         // TUPLE_INT
@@ -76,57 +83,74 @@ static void send_cmd(void) {
   app_message_outbox_send();
 }*/
 
-static void handle_minute_tick(struct tm *tick_time, TimeUnits units_changed) {
-  clock_copy_time_string(current_time, 6);
-  text_layer_set_text(clock_layer, current_time);
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
-}
-
-static void handle_hour_tick(struct tm *tick_time, TimeUnits units_changed) {
-  if (clock_is_24h_style()) {
-    text_layer_set_text(pm_layer, "");
+static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
+  if ((units_changed & MINUTE_UNIT) != 0) {
+    clock_copy_time_string(current_time, sizeof(current_time));
+    text_layer_set_text(clock_layer, current_time);
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
   }
-  else {
-    if (tick_time->tm_hour >= 12) {
-      text_layer_set_text(pm_layer, "PM");
+  if ((units_changed & HOUR_UNIT) != 0) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Hour changed");
+    if (clock_is_24h_style()) {
+      text_layer_set_text(pm_layer, "");
     }
     else {
-      text_layer_set_text(pm_layer, "AM");
+      if (tick_time->tm_hour >= 12) {
+        text_layer_set_text(pm_layer, "PM");
+      }
+      else {
+        text_layer_set_text(pm_layer, "AM");
+      }
     }
+  }
+  if ((units_changed & DAY_UNIT) != 0) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Day changed");
+    strftime(current_date, sizeof(current_date), "%a %b %d", tick_time);
+    text_layer_set_text(date_layer, current_date);
   }
 }
 
-static void handle_day_tick(struct tm *tick_time, TimeUnits units_changed) {
-  strftime(current_date, sizeof(current_date), "%a %b %d", tick_time);
-  text_layer_set_text(date_layer, current_date);
-}
-
-static void update_bt_icon() {
-  if (bluetooth_connection_service_peek()) {
+static void update_bt_icon(bool connected) {
+  if (connected) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Connected");
     bitmap_layer_set_bitmap(bt_layer, bt_icon);
   }
   else {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
     bitmap_layer_set_bitmap(bt_layer, NULL);
-    vibes_long_pulse();
+    
+    VibePattern pat = {
+      .durations = bt_warn_pattern,
+      .num_segments = ARRAY_LENGTH(bt_warn_pattern),
+    };
+    vibes_enqueue_custom_pattern(pat);
   }
 }
 
 static void handle_bt_timeout(void *data) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Update - 15sec");
   bt_timer = NULL;
-  update_bt_icon();
+  update_bt_icon(bluetooth_connection_service_peek());
 }
 
 static void handle_bt_update(bool connected) {
-  if (bt_timer) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Timer Rescheduled");
-    app_timer_reschedule(bt_timer, 15000);
+  if (connected) {
+    // If connected, immediately update BT icon
+    if (bt_timer)
+      app_timer_cancel(bt_timer);
+    
+    update_bt_icon(bluetooth_connection_service_peek());
   }
   else {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Timer Scheduled");
-    bt_timer = app_timer_register(15000, handle_bt_timeout, NULL);
+    // If disconnected, wait 15 seconds to update BT icon in case of reconnect
+    if (bt_timer) {
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Timer Rescheduled");
+      app_timer_reschedule(bt_timer, 15000);
+    }
+    else {
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Timer Scheduled");
+      bt_timer = app_timer_register(15000, handle_bt_timeout, NULL);
+    }
   }
 }
 
@@ -158,6 +182,94 @@ static void current_layer_draw(Layer *layer, GContext *ctx) {
   graphics_draw_line(ctx, GPoint(0, 57), GPoint(144, 57));
 }
 
+static void cal_layer_draw(Layer *layer, GContext *ctx) {
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, GRect(0, 0, 144, 46), 0, GCornerNone);
+  
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, 11, 144, 11), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
+  
+  graphics_context_set_stroke_color(ctx, GColorWhite);
+  for (int c = 1; c < 7; c++) {
+    graphics_draw_line(ctx, GPoint((c*20) + c - 1, 11), GPoint((c*20) + c - 1, 46));
+  }
+  
+  // Get current time
+  struct tm *t;
+  time_t temp;
+  temp = time(NULL);
+  t = localtime(&temp);
+  
+  graphics_context_set_text_color(ctx, GColorBlack);
+  GFont curr_font;
+  
+  // Draw week day names
+  for (int d = 0; d < 7; d++) {
+    if (t->tm_wday == ((d + startday) % 7))
+      curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
+    else
+      curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
+    graphics_draw_text(ctx, weekdays[(d + startday) % 7], curr_font, GRect((d * 20) + d, -4, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+  
+  int leap_year = (((1900 + t->tm_year) % 100) == 0 ? 0 : (((1900 + t->tm_year) % 4) == 0) ? 1 : 0);
+  int prev_mon = (t->tm_mon) == 0 ? 12 : t->tm_mon;
+  int curr_mon = t->tm_mon + 1;
+  int prev_mon_len = 31 - ((prev_mon == 2) ? (3 - leap_year) : ((prev_mon - 1) % 7 % 2));
+  int curr_mon_len = 31 - ((curr_mon == 2) ? (3 - leap_year) : ((curr_mon - 1) % 7 % 2));
+  
+  int start_date;
+  int curr_date;
+  char curr_date_str[3];
+  
+  // Draw previous week dates
+  start_date = t->tm_mday - t->tm_wday - 7;
+  graphics_context_set_text_color(ctx, GColorWhite);
+  
+  for (int d = 0; d < 7; d++) {
+    if ((start_date + d) < 1)
+      curr_date = start_date + d + prev_mon_len;
+    else
+      curr_date = start_date + d;
+    
+    snprintf(curr_date_str, 3, "%d", curr_date);
+    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, 7, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+  
+  // Draw current week dates
+  start_date = t->tm_mday - t->tm_wday;
+  graphics_context_set_text_color(ctx, GColorBlack);
+  
+  for (int d = 0; d < 7; d++) {
+    if ((start_date + d) < 1)
+      curr_date = start_date + d + prev_mon_len;
+    else if ((start_date + d) > curr_mon_len)
+      curr_date = start_date + d - curr_mon_len;
+    else
+      curr_date = start_date + d;
+    
+    snprintf(curr_date_str, 3, "%d", curr_date);
+    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, 19, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+  
+  // Draw next week dates
+  start_date = t->tm_mday - t->tm_wday + 7;
+  graphics_context_set_text_color(ctx, GColorWhite);
+  
+  for (int d = 0; d < 7; d++) {
+    if ((start_date + d) > curr_mon_len)
+      curr_date = start_date + d - curr_mon_len;
+    else
+      curr_date = start_date + d;
+    
+    snprintf(curr_date_str, 3, "%d", curr_date);
+    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, 31, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  }
+  
+  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((t->tm_wday * 20) + t->tm_wday, 23, 19, 11));
+}
+
 static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   
@@ -168,7 +280,6 @@ static void window_load(Window *window) {
   t = localtime(&temp);
   
   current_layer = layer_create(GRect(0, 0, 144, 58));
-  layer_add_child(window_layer, current_layer);
   
   clock_layer = text_layer_create(GRect(-1, -14, 126, 50));
   text_layer_set_text_color(clock_layer, GColorWhite);
@@ -177,7 +288,6 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(clock_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(clock_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(clock_layer));
-  handle_minute_tick(t, MINUTE_UNIT);
   
   pm_layer = text_layer_create(GRect(123, 23, 20, 15));
   text_layer_set_text_color(pm_layer, GColorWhite);
@@ -186,7 +296,6 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(pm_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(pm_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(pm_layer));
-  handle_hour_tick(t, HOUR_UNIT);
   
   date_layer = text_layer_create(GRect(72, 30, 72, 26));
   text_layer_set_text_color(date_layer, GColorWhite);
@@ -195,16 +304,19 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(date_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
-  handle_day_tick(t, DAY_UNIT);
+  
+  handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
   bt_layer = bitmap_layer_create(GRect(129, 1, 9, 16));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
-  update_bt_icon();
+  update_bt_icon(bluetooth_connection_service_peek());
   
   batt_layer = bitmap_layer_create(GRect(126, 18, 16, 8));
   layer_add_child(current_layer, bitmap_layer_get_layer(batt_layer));
   BatteryChargeState batt_state = battery_state_service_peek();
   handle_batt_update(batt_state);
+  
+  layer_add_child(window_layer, current_layer);
   
   layer_set_update_proc(current_layer, current_layer_draw);
   
@@ -235,6 +347,13 @@ static void window_load(Window *window) {
       sync_tuple_changed_callback, sync_error_callback, NULL);
 
   send_cmd();*/
+  
+  cal_layer = layer_create(GRect(0, 122, 144, 47));
+  layer_add_child(window_layer, cal_layer);
+  curr_date_layer = inverter_layer_create(GRect(0, 23, 19, 11));
+  layer_add_child(cal_layer, inverter_layer_get_layer(curr_date_layer));
+  
+  layer_set_update_proc(cal_layer, cal_layer_draw);
 }
 
 static void window_unload(Window *window) {
@@ -249,9 +368,15 @@ static void window_unload(Window *window) {
   }
   
   text_layer_destroy(clock_layer);
+  text_layer_destroy(date_layer);
+  text_layer_destroy(pm_layer);
+  layer_destroy(current_layer);
   /*text_layer_destroy(city_layer);
   text_layer_destroy(temperature_layer);
   bitmap_layer_destroy(icon_layer);*/
+  
+  inverter_layer_destroy(curr_date_layer);
+  layer_destroy(cal_layer);
 }
 
 static void init(void) {
@@ -263,9 +388,7 @@ static void init(void) {
     .unload = window_unload
   });
 
-  tick_timer_service_subscribe(MINUTE_UNIT, handle_minute_tick);
-  tick_timer_service_subscribe(HOUR_UNIT, handle_hour_tick);
-  tick_timer_service_subscribe(DAY_UNIT, handle_day_tick);
+  tick_timer_service_subscribe(MINUTE_UNIT | HOUR_UNIT | DAY_UNIT, handle_tick);
   
   bt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BT);
   bluetooth_connection_service_subscribe(handle_bt_update);
