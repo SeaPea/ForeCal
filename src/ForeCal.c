@@ -12,6 +12,8 @@ static BitmapLayer *bt_layer = NULL;
 static GBitmap *batt_icon = NULL;
 static BitmapLayer *batt_layer = NULL;
 
+static TextLayer *curr_temp_layer = NULL;
+
 static const uint32_t const bt_warn_pattern[] = { 1000, 500, 1000 };
 //static TextLayer *temperature_layer;
 //static TextLayer *city_layer;
@@ -23,50 +25,50 @@ static InverterLayer *curr_date_layer = NULL;
 static int startday = 0;
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
-//static AppSync sync;
-//static uint8_t sync_buffer[64];
+static AppSync sync;
+static uint8_t sync_buffer[64];
 
 static char current_time[] = "00:00";
 static char current_date[] = "Sun Jan 01";
 
-/*enum WeatherKey {
+enum WeatherKey {
   WEATHER_ICON_KEY = 0x0,         // TUPLE_INT
   WEATHER_TEMPERATURE_KEY = 0x1,  // TUPLE_CSTRING
   WEATHER_CITY_KEY = 0x2,         // TUPLE_CSTRING
 };
 
-static const uint32_t WEATHER_ICONS[] = {
+/*static const uint32_t WEATHER_ICONS[] = {
   RESOURCE_ID_IMAGE_SUN, //0
   RESOURCE_ID_IMAGE_CLOUD, //1
   RESOURCE_ID_IMAGE_RAIN, //2
   RESOURCE_ID_IMAGE_SNOW //3
 };*/
-/*
+
 static void sync_error_callback(DictionaryResult dict_error, AppMessageResult app_message_error, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Sync Error: %d", app_message_error);
 }
 
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   switch (key) {
-    case WEATHER_ICON_KEY:
+    /*case WEATHER_ICON_KEY:
       if (icon_bitmap) {
         gbitmap_destroy(icon_bitmap);
       }
       icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[new_tuple->value->uint8]);
       bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
       break;
-
+*/
     case WEATHER_TEMPERATURE_KEY:
       // App Sync keeps new_tuple in sync_buffer, so we may use it directly
-      text_layer_set_text(temperature_layer, new_tuple->value->cstring);
+      text_layer_set_text(curr_temp_layer, new_tuple->value->cstring);
       break;
-
+/*
     case WEATHER_CITY_KEY:
       text_layer_set_text(city_layer, new_tuple->value->cstring);
-      break;
+      break;*/
   }
 }
-
+/*
 static void send_cmd(void) {
   Tuplet value = TupletInteger(1, 1);
 
@@ -107,6 +109,8 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Day changed");
     strftime(current_date, sizeof(current_date), "%a %b %d", tick_time);
     text_layer_set_text(date_layer, current_date);
+    // Trigger redraw of calendar
+    layer_mark_dirty(cal_layer);
   }
 }
 
@@ -201,7 +205,8 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
     
     // Draw the date text in the correct calendar cell
     snprintf(curr_date_str, 3, "%d", curr_date);
-    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), GRect((d * 20) + d, ypos, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 
+                       GRect((d * 20) + d, ypos, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
 }
 
@@ -236,7 +241,8 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
       curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
     else
       curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-    graphics_draw_text(ctx, weekdays[(d + startday) % 7], curr_font, GRect((d * 20) + d, -4, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    graphics_draw_text(ctx, weekdays[(d + startday) % 7], curr_font, GRect((d * 20) + d, -4, 19, 14), 
+                       GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
   
   // Calculate leap year and month lengths
@@ -247,14 +253,15 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   int curr_mon_len = 31 - ((curr_mon == 2) ? (3 - leap_year) : ((curr_mon - 1) % 7 % 2));
   
   // Draw previous week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7, curr_mon_len, prev_mon_len, GColorWhite, 7);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + startday, curr_mon_len, prev_mon_len, GColorWhite, 7);
   // Draw current week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday, curr_mon_len, prev_mon_len, GColorBlack, 19);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + startday, curr_mon_len, prev_mon_len, GColorBlack, 19);
   // Draw next week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7, curr_mon_len, prev_mon_len, GColorWhite, 31);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + startday, curr_mon_len, prev_mon_len, GColorWhite, 31);
   
   // Invert current date colors to highlight it
-  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((t->tm_wday * 20) + t->tm_wday, 23, 19, 11));
+  int curr_day = (t->tm_wday + 7 - startday) % 7;
+  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((curr_day  * 20) + curr_day, 23, 19, 11));
 }
 
 static void window_load(Window *window) {
@@ -284,15 +291,13 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(pm_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(pm_layer));
   
-  date_layer = text_layer_create(GRect(72, 30, 72, 26));
+  date_layer = text_layer_create(GRect(60, 30, 84, 26));
   text_layer_set_text_color(date_layer, GColorWhite);
   text_layer_set_background_color(date_layer, GColorClear);
   text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(date_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
-  
-  handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
   bt_layer = bitmap_layer_create(GRect(129, 1, 9, 16));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
@@ -322,7 +327,15 @@ static void window_load(Window *window) {
   text_layer_set_background_color(city_layer, GColorClear);
   text_layer_set_font(city_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
   text_layer_set_text_alignment(city_layer, GTextAlignmentCenter);
-  layer_add_child(window_layer, text_layer_get_layer(city_layer));
+  layer_add_child(window_layer, text_layer_get_layer(city_layer));*/
+  
+  curr_temp_layer = text_layer_create(GRect(0, 30, 40, 26));
+  text_layer_set_text_color(curr_temp_layer, GColorWhite);
+  text_layer_set_background_color(curr_temp_layer, GColorClear);
+  text_layer_set_font(curr_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_text_alignment(curr_temp_layer, GTextAlignmentLeft);
+  text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
+  layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
 
   Tuplet initial_values[] = {
     TupletInteger(WEATHER_ICON_KEY, (uint8_t) 1),
@@ -333,7 +346,7 @@ static void window_load(Window *window) {
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
       sync_tuple_changed_callback, sync_error_callback, NULL);
 
-  send_cmd();*/
+  //send_cmd();
   
   cal_layer = layer_create(GRect(0, 122, 144, 47));
   layer_add_child(window_layer, cal_layer);
@@ -341,12 +354,14 @@ static void window_load(Window *window) {
   layer_add_child(cal_layer, inverter_layer_get_layer(curr_date_layer));
   
   layer_set_update_proc(cal_layer, cal_layer_draw);
+  
+  handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
 }
 
 static void window_unload(Window *window) {
-  /*app_sync_deinit(&sync);
+  app_sync_deinit(&sync);
 
-  if (icon_bitmap) {
+  /*if (icon_bitmap) {
     gbitmap_destroy(icon_bitmap);
   }*/
   
@@ -357,6 +372,7 @@ static void window_unload(Window *window) {
   text_layer_destroy(clock_layer);
   text_layer_destroy(date_layer);
   text_layer_destroy(pm_layer);
+  text_layer_destroy(curr_temp_layer);
   layer_destroy(current_layer);
   /*text_layer_destroy(city_layer);
   text_layer_destroy(temperature_layer);
@@ -380,9 +396,9 @@ static void init(void) {
   bt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BT);
   bluetooth_connection_service_subscribe(handle_bt_update);
   
-  /*const int inbound_size = 64;
+  const int inbound_size = 64;
   const int outbound_size = 64;
-  app_message_open(inbound_size, outbound_size);*/
+  app_message_open(inbound_size, outbound_size);
 
   const bool animated = true;
   window_stack_push(window, animated);

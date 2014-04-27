@@ -1,73 +1,73 @@
 {
-    "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
-    "resources": {
-        "media": [
-            {
-                "name": "IMAGE_BATT_25",
-                "type": "png",
-                "file": "images/Batt25.png"
-            },
-            {
-                "name": "IMAGE_BATT_50",
-                "type": "png",
-                "file": "images/Batt50.png"
-            },
-            {
-                "name": "IMAGE_BATT_75",
-                "type": "png",
-                "file": "images/Batt75.png"
-            },
-            {
-                "name": "IMAGE_BATT_100",
-                "type": "png",
-                "file": "images/Batt100.png"
-            },
-            {
-                "name": "IMAGE_BATT_CHARGE",
-                "type": "png",
-                "file": "images/BattCharge.png"
-            },
-            {
-                "name": "IMAGE_BT",
-                "type": "png",
-                "file": "images/BT.png"
-            },
-            {
-                "name": "IMAGE_SNOW",
-                "type": "png",
-                "file": "images/snow.png"
-            },
-            {
-                "name": "IMAGE_CLOUD",
-                "type": "png",
-                "file": "images/cloud.png"
-            },
-            {
-                "name": "IMAGE_RAIN",
-                "type": "png",
-                "file": "images/rain.png"
-            },
-            {
-                "name": "IMAGE_SUN",
-                "type": "png",
-                "file": "images/sun.png"
-            }
-        ]
+    "companyName": "SeaPea",
+    "appKeys": {
+        "icon": 0,
+        "temperature": 1,
+        "city": 2
     },
     "capabilities": [
         "location"
     ],
-    "companyName": "SeaPea",
-    "shortName": "ForeCal",
+    "resources": {
+        "media": [
+            {
+                "name": "IMAGE_BATT_25",
+                "file": "images/Batt25.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_BATT_50",
+                "file": "images/Batt50.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_BATT_75",
+                "file": "images/Batt75.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_BATT_100",
+                "file": "images/Batt100.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_BATT_CHARGE",
+                "file": "images/BattCharge.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_BT",
+                "file": "images/BT.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_SNOW",
+                "file": "images/snow.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_CLOUD",
+                "file": "images/cloud.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_RAIN",
+                "file": "images/rain.png",
+                "type": "png"
+            },
+            {
+                "name": "IMAGE_SUN",
+                "file": "images/sun.png",
+                "type": "png"
+            }
+        ]
+    },
+    "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
+    "versionCode": 1,
     "longName": "ForeCal",
+    "shortName": "ForeCal",
+    "versionLabel": "0.1.0",
     "watchapp": {
         "watchface": true
-    },
-    "versionCode": 1,
-    "appKeys": {
-        "temperature": 1,
-        "city": 2,
-        "icon": 0
-    },
-    "versionLabel": "0.1.0"
+    }
 }
