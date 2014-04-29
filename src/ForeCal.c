@@ -25,8 +25,11 @@ static TextLayer *high_label_layer = NULL;
 static TextLayer *low_temp_layer = NULL;
 static TextLayer *low_label_layer = NULL;
 
-//static BitmapLayer *icon_layer;
-//static GBitmap *icon_bitmap = NULL;
+static BitmapLayer *icon_layer;
+static GBitmap *icon_bitmap = NULL;
+
+static BitmapLayer *sun_layer;
+static GBitmap *sun_bitmap = NULL;
 
 static Layer *cal_layer = NULL;
 static InverterLayer *curr_date_layer = NULL;
@@ -58,12 +61,26 @@ enum WeatherKey {
   WEATHER_CITY_KEY = 0x9
 };
 
-/*static const uint32_t WEATHER_ICONS[] = {
-  RESOURCE_ID_IMAGE_SUN, //0
-  RESOURCE_ID_IMAGE_CLOUD, //1
-  RESOURCE_ID_IMAGE_RAIN, //2
-  RESOURCE_ID_IMAGE_SNOW //3
-};*/
+static const uint32_t WEATHER_ICONS[] = {
+  RESOURCE_ID_IMAGE_NA, //0
+  RESOURCE_ID_IMAGE_SUNNY, //1
+  RESOURCE_ID_IMAGE_PARTLYCLOUDY, //2
+  RESOURCE_ID_IMAGE_CLOUDY, //3
+  RESOURCE_ID_IMAGE_WINDY, //4
+  RESOURCE_ID_IMAGE_LOWVISIBILITY, //5
+  RESOURCE_ID_IMAGE_ISOLATEDTHUNDERSTORMS, //6
+  RESOURCE_ID_IMAGE_SCATTEREDTHUNDERSTORMS, //7
+  RESOURCE_ID_IMAGE_DRIZZLE, //8
+  RESOURCE_ID_IMAGE_RAIN, //9
+  RESOURCE_ID_IMAGE_HAIL, //10
+  RESOURCE_ID_IMAGE_SNOW, //11
+  RESOURCE_ID_IMAGE_MIXEDSNOW, //12
+  RESOURCE_ID_IMAGE_COLD, //13
+  RESOURCE_ID_IMAGE_TORNADO, //14
+  RESOURCE_ID_IMAGE_STORM, //15
+  RESOURCE_ID_IMAGE_LIGHTSNOW, //16
+  RESOURCE_ID_IMAGE_HOT //17
+};
 
 static void handle_status_timer(void *data) {
   text_layer_set_text(status_layer, status);
@@ -77,20 +94,21 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
 
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   switch (key) {
-    /*case WEATHER_ICON_KEY:
+    case WEATHER_ICON_KEY:
       if (icon_bitmap) {
         gbitmap_destroy(icon_bitmap);
       }
+      layer_set_hidden(bitmap_layer_get_layer(icon_layer), (new_tuple->value->uint8 == 0));
       icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[new_tuple->value->uint8]);
       bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
       break;
-*/
     case WEATHER_STATUS_KEY:
-      //text_layer_set_text(status_layer, new_tuple->value->cstring);
+      // Save status for displaying after showing City for 5 seconds
       snprintf(status, sizeof(status), "%s", new_tuple->value->cstring);
       break;
     case WEATHER_CITY_KEY:
       text_layer_set_text(status_layer, new_tuple->value->cstring);
+      // Show City for 5 seconds and then replace with Status
       if (status_timer) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Status Timer Rescheduled");
         app_timer_reschedule(status_timer, 5000);
@@ -105,6 +123,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_SUN_RISE_SET_KEY:
       text_layer_set_text(sun_rise_set_layer, new_tuple->value->cstring);
+      layer_set_hidden(bitmap_layer_get_layer(sun_layer), (strlen(new_tuple->value->cstring) == 0));
       break;
     case WEATHER_FORECAST_DAY_KEY:
       text_layer_set_text(forecast_day_layer, new_tuple->value->cstring);
@@ -121,7 +140,12 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       text_layer_set_text(condition_layer, new_tuple->value->cstring);
       break;
     case WEATHER_NIGHTMODE_KEY:
-      layer_set_hidden(inverter_layer_get_layer(nightmode_layer), (new_tuple->value->uint8 == 0));
+      layer_set_hidden(inverter_layer_get_layer(nightmode_layer), (new_tuple->value->uint8 == 1));
+      if (new_tuple->value->uint8 == 1)
+        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
+      else
+        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
+      bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
       break;  
   }
 }
@@ -283,10 +307,10 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
   
   // Draw day separators
-  graphics_context_set_stroke_color(ctx, GColorWhite);
+  /*graphics_context_set_stroke_color(ctx, GColorWhite);
   for (int c = 1; c < 7; c++) {
     graphics_draw_line(ctx, GPoint((c*20) + c - 1, 11), GPoint((c*20) + c - 1, 46));
-  }
+  }*/
   
   // Get current time
   struct tm *t;
@@ -337,7 +361,7 @@ static void window_load(Window *window) {
   
   current_layer = layer_create(GRect(0, 0, 144, 58));
   
-  clock_layer = text_layer_create(GRect(-1, -14, 126, 50));
+  clock_layer = text_layer_create(GRect(-1, -13, 126, 50));
   text_layer_set_text_color(clock_layer, GColorWhite);
   text_layer_set_background_color(clock_layer, GColorClear);
   text_layer_set_font(clock_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
@@ -353,10 +377,10 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(pm_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(pm_layer));
   
-  date_layer = text_layer_create(GRect(60, 30, 84, 26));
+  date_layer = text_layer_create(GRect(55, 30, 89, 26));
   text_layer_set_text_color(date_layer, GColorWhite);
   text_layer_set_background_color(date_layer, GColorClear);
-  text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   text_layer_set_text_alignment(date_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
@@ -374,24 +398,13 @@ static void window_load(Window *window) {
   
   layer_set_update_proc(current_layer, current_layer_draw);
   
-  /*icon_layer = bitmap_layer_create(GRect(32, 10, 40, 40));
-  layer_add_child(window_layer, bitmap_layer_get_layer(icon_layer));*/
-  
-  curr_temp_layer = text_layer_create(GRect(0, 30, 40, 26));
+  curr_temp_layer = text_layer_create(GRect(0, 30, 45, 26));
   text_layer_set_text_color(curr_temp_layer, GColorWhite);
   text_layer_set_background_color(curr_temp_layer, GColorClear);
   text_layer_set_font(curr_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(curr_temp_layer, GTextAlignmentLeft);
   text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
-  
-  sun_rise_set_layer = text_layer_create(GRect(38, 40, 34, 14));
-  text_layer_set_text_color(sun_rise_set_layer, GColorWhite);
-  text_layer_set_background_color(sun_rise_set_layer, GColorClear);
-  text_layer_set_font(sun_rise_set_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
-  text_layer_set_text_alignment(sun_rise_set_layer, GTextAlignmentCenter);
-  text_layer_set_overflow_mode(sun_rise_set_layer, GTextOverflowModeFill);
-  layer_add_child(current_layer, text_layer_get_layer(sun_rise_set_layer));
   
   forecast_layer = layer_create(GRect(0, 58, 144, 63));
   
@@ -411,7 +424,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(status_layer, GTextOverflowModeTrailingEllipsis);
   layer_add_child(forecast_layer, text_layer_get_layer(status_layer));
   
-  high_label_layer = text_layer_create(GRect(92, 5, 10, 24));
+  high_label_layer = text_layer_create(GRect(1, 5, 10, 24));
   text_layer_set_text_color(high_label_layer, GColorWhite);
   text_layer_set_background_color(high_label_layer, GColorClear);
   text_layer_set_font(high_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -421,7 +434,7 @@ static void window_load(Window *window) {
   layer_set_hidden(text_layer_get_layer(high_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(high_label_layer));
   
-  high_temp_layer = text_layer_create(GRect(100, 5, 42, 24));
+  high_temp_layer = text_layer_create(GRect(9, 5, 45, 24));
   text_layer_set_text_color(high_temp_layer, GColorWhite);
   text_layer_set_background_color(high_temp_layer, GColorClear);
   text_layer_set_font(high_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -429,7 +442,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(high_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(high_temp_layer));
   
-  low_label_layer = text_layer_create(GRect(92, 22, 10, 24));
+  low_label_layer = text_layer_create(GRect(1, 22, 10, 24));
   text_layer_set_text_color(low_label_layer, GColorWhite);
   text_layer_set_background_color(low_label_layer, GColorClear);
   text_layer_set_font(low_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -439,13 +452,27 @@ static void window_load(Window *window) {
   layer_set_hidden(text_layer_get_layer(low_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(low_label_layer));
   
-  low_temp_layer = text_layer_create(GRect(100, 22, 42, 24));
+  low_temp_layer = text_layer_create(GRect(9, 22, 45, 24));
   text_layer_set_text_color(low_temp_layer, GColorWhite);
   text_layer_set_background_color(low_temp_layer, GColorClear);
   text_layer_set_font(low_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text_alignment(low_temp_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(low_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(low_temp_layer));
+  
+  sun_rise_set_layer = text_layer_create(GRect(109, 25, 36, 18));
+  text_layer_set_text_color(sun_rise_set_layer, GColorWhite);
+  text_layer_set_background_color(sun_rise_set_layer, GColorClear);
+  text_layer_set_font(sun_rise_set_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  text_layer_set_text_alignment(sun_rise_set_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(sun_rise_set_layer, GTextOverflowModeFill);
+  layer_add_child(forecast_layer, text_layer_get_layer(sun_rise_set_layer));
+  
+  icon_layer = bitmap_layer_create(GRect(66, 13, 32, 32));
+  layer_add_child(forecast_layer, bitmap_layer_get_layer(icon_layer));
+  
+  sun_layer = bitmap_layer_create(GRect(117, 16, 20, 14));
+  layer_add_child(forecast_layer, bitmap_layer_get_layer(sun_layer));
   
   condition_layer = text_layer_create(GRect(0, 42, 144, 24));
   text_layer_set_text_color(condition_layer, GColorWhite);
@@ -475,20 +502,14 @@ static void window_load(Window *window) {
     TupletCString(WEATHER_FORECAST_DAY_KEY, ""),
     TupletCString(WEATHER_HIGH_TEMP_KEY, ""),
     TupletCString(WEATHER_LOW_TEMP_KEY, ""),
-    TupletInteger(WEATHER_ICON_KEY, (uint8_t) 1),
+    TupletInteger(WEATHER_ICON_KEY, (uint8_t) 0),
     TupletCString(WEATHER_CONDITION_KEY, ""),
-    TupletInteger(WEATHER_NIGHTMODE_KEY, (uint8_t) 0),
-    TupletCString(WEATHER_CITY_KEY, "")
+    TupletInteger(WEATHER_NIGHTMODE_KEY, (uint8_t) 1),
+    TupletCString(WEATHER_CITY_KEY, "Fetching...")
   };
-  
-  //text_layer_set_text(status_layer, "Fetching...");
-  
-  
   
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
       sync_tuple_changed_callback, sync_error_callback, NULL);
-
-  //send_cmd();
   
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
 }
@@ -496,15 +517,14 @@ static void window_load(Window *window) {
 static void window_unload(Window *window) {
   app_sync_deinit(&sync);
 
-  /*if (icon_bitmap) {
+  if (icon_bitmap)
     gbitmap_destroy(icon_bitmap);
-  }*/
+  
+  if (sun_bitmap)
+    gbitmap_destroy(sun_bitmap);
   
   if (batt_icon)
     gbitmap_destroy(batt_icon);
-  
-  if (bt_icon)
-    gbitmap_destroy(bt_icon);
   
   text_layer_destroy(clock_layer);
   text_layer_destroy(date_layer);
@@ -524,9 +544,8 @@ static void window_unload(Window *window) {
   text_layer_destroy(condition_layer);
   layer_destroy(forecast_layer);
   
-  /*text_layer_destroy(city_layer);
-  text_layer_destroy(temperature_layer);
-  bitmap_layer_destroy(icon_layer);*/
+  bitmap_layer_destroy(icon_layer);
+  bitmap_layer_destroy(sun_layer);
   
   inverter_layer_destroy(curr_date_layer);
   layer_destroy(cal_layer);
