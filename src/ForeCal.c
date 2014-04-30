@@ -15,7 +15,6 @@ static GBitmap *batt_icon = NULL;
 static BitmapLayer *batt_layer = NULL;
 
 static TextLayer *curr_temp_layer = NULL;
-static TextLayer *sun_rise_set_layer = NULL;
 
 static Layer *forecast_layer = NULL;
 static TextLayer *forecast_day_layer = NULL;
@@ -26,6 +25,7 @@ static TextLayer *high_temp_layer = NULL;
 static TextLayer *high_label_layer = NULL;
 static TextLayer *low_temp_layer = NULL;
 static TextLayer *low_label_layer = NULL;
+static TextLayer *sun_rise_set_layer = NULL;
 
 static BitmapLayer *icon_layer;
 static GBitmap *icon_bitmap = NULL;
@@ -50,6 +50,7 @@ static char current_date[] = "Sun Jan 01";
 
 static char status[50] = "";
 
+// App Message Keys for Tuples transferred from Javascript
 enum WeatherKey {
   WEATHER_STATUS_KEY = 0x0,
   WEATHER_CURR_TEMP_KEY = 0x1,
@@ -63,6 +64,7 @@ enum WeatherKey {
   WEATHER_CITY_KEY = 0x9
 };
 
+// Weather icon resources defined in order to match Javascript icon values
 static const uint32_t WEATHER_ICONS[] = {
   RESOURCE_ID_IMAGE_NA, //0
   RESOURCE_ID_IMAGE_SUNNY, //1
@@ -85,16 +87,19 @@ static const uint32_t WEATHER_ICONS[] = {
   RESOURCE_ID_IMAGE_HURRICANE //18
 };
 
+// Timer event that shows status after displaying the City for 5 seconds
 static void handle_status_timer(void *data) {
   text_layer_set_text(status_layer, status);
   status_timer = NULL;
 }
 
+// App message communication error from Javascript
 static void sync_error_callback(DictionaryResult dict_error, AppMessageResult app_message_error, void *context) {
   APP_LOG(APP_LOG_LEVEL_ERROR, "App Message Sync Error: %d", app_message_error);
   text_layer_set_text(status_layer, "Comm error");
 }
 
+// Event fired when data received from Javascript
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   switch (key) {
     case WEATHER_ICON_KEY:
@@ -124,6 +129,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       text_layer_set_text(curr_temp_layer, new_tuple->value->cstring);
       break;
     case WEATHER_SUN_RISE_SET_KEY:
+      // Show the sunrise or sunset time (only the next sunrise/sunset is shown)
       text_layer_set_text(sun_rise_set_layer, new_tuple->value->cstring);
       layer_set_hidden(bitmap_layer_get_layer(sun_layer), (strlen(new_tuple->value->cstring) == 0));
       break;
@@ -145,7 +151,9 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       layer_set_hidden(inverter_layer_get_layer(daymode_layer), (new_tuple->value->uint8 == 0));
       if (sun_bitmap)
         gbitmap_destroy(sun_bitmap);
-        
+      
+      // 'Daymode' is defined as the time being between Sunrise and Sunset so it
+      // can be used to determine the correct Sunrise/Sunset icon to display
       if (new_tuple->value->uint8 == 0)
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
       else
@@ -155,6 +163,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
   }
 }
 
+// Procedure that triggers the weather data to update via Javascript
 static void update_weather(void) {
   text_layer_set_text(status_layer, "Fetching...");
   
@@ -173,6 +182,7 @@ static void update_weather(void) {
   app_message_outbox_send();
 }
 
+// Handle clock change events
 static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   if ((units_changed & MINUTE_UNIT) != 0) {
     clock_copy_time_string(current_time, sizeof(current_time));
@@ -211,6 +221,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   }
 }
 
+// Show or hide Bluetooth icon based on connection status and vibrate on disconnect
 static void update_bt_icon(bool connected) {
   if (connected) {
 #ifdef DEBUG
@@ -232,6 +243,7 @@ static void update_bt_icon(bool connected) {
   }
 }
 
+// Handle Bluetooth disconnect timer to show disconnect after 15 seconds
 static void handle_bt_timeout(void *data) {
 #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Update - 15sec");
@@ -240,6 +252,7 @@ static void handle_bt_timeout(void *data) {
   update_bt_icon(bluetooth_connection_service_peek());
 }
 
+// Handle Bluetooth status updates
 static void handle_bt_update(bool connected) {
   if (connected) {
     // If connected, immediately update BT icon
@@ -259,6 +272,7 @@ static void handle_bt_update(bool connected) {
   }
 }
 
+// Handle battery status updates
 static void handle_batt_update(BatteryChargeState batt_status) {
   if (batt_icon) {
     gbitmap_destroy(batt_icon);
@@ -282,8 +296,10 @@ static void handle_batt_update(BatteryChargeState batt_status) {
   bitmap_layer_set_bitmap(batt_layer, batt_icon);
 }
 
+// Handle current layer (time, date, current temp) drawing updates
 static void current_layer_draw(Layer *layer, GContext *ctx) {
   graphics_context_set_stroke_color(ctx, GColorWhite);
+  // Draw separator line at bottom of this layer
   graphics_draw_line(ctx, GPoint(0, 57), GPoint(144, 57));
 }
 
@@ -311,12 +327,13 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
   }
 }
 
+// Handle drawing of the 3 week calendar layer
 static void cal_layer_draw(Layer *layer, GContext *ctx) {
   // Paint calendar background
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, GRect(0, 0, 144, 46), 0, GCornerNone);
   
-  // Paint inverted row background
+  // Paint inverted rows background
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, GRect(0, 11, 144, 11), 0, GCornerNone);
   graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
@@ -368,6 +385,7 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
 static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   
+  // Setup 'current' layer (time, date, current temp, battery, bluetooth)
   current_layer = layer_create(GRect(0, 0, 144, 58));
   
   clock_layer = text_layer_create(GRect(-1, -13, 126, 50));
@@ -405,10 +423,6 @@ static void window_load(Window *window) {
   handle_batt_update(batt_state);
   battery_state_service_subscribe(handle_batt_update);
   
-  layer_add_child(window_layer, current_layer);
-  
-  layer_set_update_proc(current_layer, current_layer_draw);
-  
   curr_temp_layer = text_layer_create(GRect(0, 30, 45, 26));
   text_layer_set_text_color(curr_temp_layer, GColorWhite);
   text_layer_set_background_color(curr_temp_layer, GColorClear);
@@ -417,6 +431,10 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
   
+  layer_add_child(window_layer, current_layer);
+  layer_set_update_proc(current_layer, current_layer_draw);
+  
+  // Setup forecast layer (High/Low Temp, conditions, sunrise/sunset)
   forecast_layer = layer_create(GRect(0, 58, 144, 63));
   
   forecast_day_layer = text_layer_create(GRect(0, -4, 64, 18));
@@ -495,6 +513,7 @@ static void window_load(Window *window) {
   
   layer_add_child(window_layer, forecast_layer);
   
+  // Setup 3 week calendar layer
   cal_layer = layer_create(GRect(0, 122, 144, 47));
   layer_add_child(window_layer, cal_layer);
   curr_date_layer = inverter_layer_create(GRect(0, 23, 19, 11));
@@ -515,6 +534,7 @@ static void window_load(Window *window) {
   // Init time and date
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
+  // Initialize weather data fetching
   Tuplet initial_values[] = {
     TupletCString(WEATHER_STATUS_KEY, "Fetching..."),
     TupletCString(WEATHER_CURR_TEMP_KEY, ""),
@@ -528,6 +548,7 @@ static void window_load(Window *window) {
     TupletCString(WEATHER_CITY_KEY, "Fetching...")
   };
   
+  // Initialize and trigger weather data Javascript call
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
       sync_tuple_changed_callback, sync_error_callback, NULL);
 }

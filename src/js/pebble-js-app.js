@@ -72,6 +72,7 @@ function iconFromWeatherId(weatherId) {
   }
 }
 
+// Parse time string into Javascript Date object
 function parseTime(timeStr) {
  
     var time = timeStr.match(/(\d+)(?::(\d\d))?\s*(p?)/i);
@@ -93,6 +94,8 @@ function parseTime(timeStr) {
     return dt;
 }
 
+// (Very) Rudementary XML parser for getting a specified attribute value of given XML tag
+// (This has to be done as there is no 'document' object in this Javascript environment)
 function getXmlAttrVal(xml, tag, attrName) {
   var re = new RegExp('<' + tag + '(\\s+|\\s[^>]+\\s)' + attrName + '\\s*=\\s*"([^"]+)"[^>]*\/>', 'im');
   var parts = re.exec(xml);
@@ -103,16 +106,19 @@ function getXmlAttrVal(xml, tag, attrName) {
     return '';
 }
 
+// Add specified number of days to a Date
 function addDays(date, days) {
     var result = new Date(date);
     result.setDate(date.getDate() + days);
     return result;
 }
 
+// Fetch the weather data from Yahoo and transmit to Pebble
 function fetchWeather(latitude, longitude) {
   var country, city, woeid, unit, status;
   var reqLoc = new XMLHttpRequest();
   var reqWeather = new XMLHttpRequest();
+  // URL for getting our WOEID from our current Lat/Long position in JSON format
   reqLoc.open('GET', 'http://query.yahooapis.com/v1/public/yql?q=select%20*%20from%20geo.placefinder%20where%20text%3D%22' + 
                latitude + '%2C' + longitude + '%22%20and%20gflags%3D%22R%22&format=json', true);
   
@@ -123,6 +129,7 @@ function fetchWeather(latitude, longitude) {
         var response = JSON.parse(reqLoc.responseText);
         if (response && response.query && response.query.results && response.query.results.Result && 
             response.query.results.Result.woeid && response.query.results.Result.woeid !== '') {
+          // Successfully found our WOEID, so now we can trigger the fetch of the weather data
           var location = response.query.results.Result;
           country = location.countrycode;
           city = location.city;
@@ -131,6 +138,7 @@ function fetchWeather(latitude, longitude) {
           console.log('City: ' + city);
           console.log('WOEID: ' + woeid);
           
+          // Determine temperature units from country code (US gets F, everyone else gets C)
           if (country == 'US')
             unit = 'F';
           else
@@ -138,9 +146,12 @@ function fetchWeather(latitude, longitude) {
           
           console.log('Unit: ' + unit);
           
+          // URL for getting basic weather forecast data in XML format (RSS)
           reqWeather.open('GET', 'http://weather.yahooapis.com/forecastrss?w=' + woeid + '&u=' + unit.toLowerCase(), true);
+          // Fetch the weather data
           reqWeather.send(null);
         } else {
+          // WOEID not found
           Pebble.sendAppMessage({
             "status":"Loc. N/A",
             "curr_temp":"",
@@ -175,6 +186,8 @@ function fetchWeather(latitude, longitude) {
   reqWeather.onload = function(e) {
     if (reqWeather.readyState == 4) {
       if(reqWeather.status == 200) {
+        // Successfully retrieved weather data
+        
         //console.log(reqWeather.responseText);
         
         var curr_temp, curr_temp_str, sunrise, sunrise_str, sunset, sunset_str;
@@ -183,6 +196,7 @@ function fetchWeather(latitude, longitude) {
         
         curr_time = new Date();
         
+        // Get current temperature
         curr_temp_str = getXmlAttrVal(reqWeather.responseText, 'yweather:condition', 'temp');
         
         if (curr_temp_str === '')
@@ -192,6 +206,7 @@ function fetchWeather(latitude, longitude) {
         
         sun_rise_set = ''; daymode = 0;
         
+        // Get Sunrise and Sunset times, which also dictate if Daymode is on or not
         sunrise_str = getXmlAttrVal(reqWeather.responseText, 'yweather:astronomy', 'sunrise');
         sunset_str = getXmlAttrVal(reqWeather.responseText, 'yweather:astronomy', 'sunset');
         
@@ -201,9 +216,11 @@ function fetchWeather(latitude, longitude) {
           
           if (!isNaN(sunrise) && !isNaN(sunset)) {
             if (curr_time >= sunset || curr_time < sunrise) {
+              // Nighttime
               sun_rise_set = sunrise.getHours() + ':' + (sunrise.getMinutes() < 10 ? '0' : '') + sunrise.getMinutes();
               daymode = 0;
             } else {
+              // Daytime
               sun_rise_set = sunset.getHours() + ':' + (sunset.getMinutes() < 10 ? '0' : '') + sunset.getMinutes();
               daymode = 1;
             }
@@ -211,9 +228,11 @@ function fetchWeather(latitude, longitude) {
         }
         
         if (curr_time.getHours() >= 18) {
+          // Between 6pm and Midnight, show tomorrow's forecast
           forecast_day = 'Tomorrow';
           forecast_date = addDays(new Date(), 1);
         } else {
+          // At all other times, show today's forecast
           forecast_day = 'Today';
           forecast_date = new Date();
         }
@@ -226,16 +245,18 @@ function fetchWeather(latitude, longitude) {
         
         low = ''; high = ''; condition = ''; icon = 0;
         
+        // Parse the forecast data out of the XML
         for (var i = 0; i < forecasts.length; i++) {
           dateAttr = reDate.exec(forecasts[i]);
           
           if (dateAttr && dateAttr.length == 2) {
             fd = new Date(dateAttr[1]);
-            
+            // Find the forecast data for today/tomorrow
             if (fd.getDate() == forecast_date.getDate()) {
               attrs = forecasts[i].match(/[^\s=>"]+\s*=\s*"[^"]+"/img);
               for (var a = 0; a < attrs.length; a++) {
                 attr = reAttr.exec(attrs[a]);
+                // Get all the weather forecast attribute values
                 if (attr && attr.length == 3) {
                   if (attr[1].toLowerCase() == 'low' && attr[2] !== '')
                     low = attr[2] + '\u00B0' + unit;
@@ -252,6 +273,7 @@ function fetchWeather(latitude, longitude) {
           }
         }
         
+        // Set the status display on the Pebble to the time of the weather update
         status = 'Upd: ' + curr_time.getHours() + ':' + 
           (curr_time.getMinutes() < 10 ? '0' : '') + curr_time.getMinutes();
         
@@ -265,6 +287,7 @@ function fetchWeather(latitude, longitude) {
         console.log('Condition: ' + condition);
         console.log('Icon: ' + icon);
         
+        // Send the data to the Pebble
         Pebble.sendAppMessage({
             "status":status,
             "curr_temp":curr_temp,
@@ -299,6 +322,7 @@ function fetchWeather(latitude, longitude) {
 }
 
 function locationSuccess(pos) {
+  // Got our Lat/Long so now fetch the weather data
   var coordinates = pos.coords;
   fetchWeather(coordinates.latitude, coordinates.longitude);
 }
@@ -306,8 +330,8 @@ function locationSuccess(pos) {
 function locationError(err) {
   console.warn('location error (' + err.code + '): ' + err.message);
   Pebble.sendAppMessage({
-    "city":"Loc Unavailable",
-    "temperature":"N/A"
+    "status":"GPS N/A",
+    "city":"GPS N/A"
   });
 }
 
@@ -317,12 +341,14 @@ var locationOptions = { "timeout": 15000, "maximumAge": 60000 };
 Pebble.addEventListener("ready",
                         function(e) {
                           console.log("connect!" + e.ready);
+                          // Trigger location and weather fetch on load
                           locationWatcher = window.navigator.geolocation.watchPosition(locationSuccess, locationError, locationOptions);
                           console.log(e.type);
                         });
 
 Pebble.addEventListener("appmessage",
                         function(e) {
+                          // Trigger location and weather fetch on command from Pebble
                           window.navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
                           console.log(e.type);
                           console.log(e.payload.temperature);
