@@ -36,7 +36,7 @@ static InverterLayer *curr_date_layer = NULL;
 
 static InverterLayer *nightmode_layer = NULL;
 
-static const uint32_t const bt_warn_pattern[] = { 1000, 500, 1000 };
+static const uint32_t bt_warn_pattern[] = { 1000, 500, 1000 };
 static int startday = 0;
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
@@ -104,7 +104,8 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_STATUS_KEY:
       // Save status for displaying after showing City for 5 seconds
-      snprintf(status, sizeof(status), "%s", new_tuple->value->cstring);
+      //snprintf(status, sizeof(status), "%s", new_tuple->value->cstring);
+      strncpy(status, new_tuple->value->cstring, sizeof(status));
       break;
     case WEATHER_CITY_KEY:
       text_layer_set_text(status_layer, new_tuple->value->cstring);
@@ -141,6 +142,9 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_NIGHTMODE_KEY:
       layer_set_hidden(inverter_layer_get_layer(nightmode_layer), (new_tuple->value->uint8 == 1));
+      if (sun_bitmap)
+        gbitmap_destroy(sun_bitmap);
+        
       if (new_tuple->value->uint8 == 1)
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
       else
@@ -153,7 +157,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
 static void update_weather(void) {
   text_layer_set_text(status_layer, "Fetching...");
   
-  Tuplet value = TupletInteger(1, 1);
+  Tuplet value = TupletCString(WEATHER_STATUS_KEY, "Fetching...");
 
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
@@ -203,11 +207,11 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 static void update_bt_icon(bool connected) {
   if (connected) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Connected");
-    bitmap_layer_set_bitmap(bt_layer, bt_icon);
+    layer_set_hidden(bitmap_layer_get_layer(bt_layer), false);
   }
   else {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
-    bitmap_layer_set_bitmap(bt_layer, NULL);
+    layer_set_hidden(bitmap_layer_get_layer(bt_layer), true);
     
     VibePattern pat = {
       .durations = bt_warn_pattern,
@@ -229,7 +233,7 @@ static void handle_bt_update(bool connected) {
     if (bt_timer)
       app_timer_cancel(bt_timer);
     
-    update_bt_icon(bluetooth_connection_service_peek());
+    update_bt_icon(connected);
   }
   else {
     // If disconnected, wait 15 seconds to update BT icon in case of reconnect
@@ -353,12 +357,6 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
 static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   
-  // Get current time
-  struct tm *t;
-  time_t temp;
-  temp = time(NULL);
-  t = localtime(&temp);
-  
   current_layer = layer_create(GRect(0, 0, 144, 58));
   
   clock_layer = text_layer_create(GRect(-1, -13, 126, 50));
@@ -387,12 +385,14 @@ static void window_load(Window *window) {
   
   bt_layer = bitmap_layer_create(GRect(129, 1, 9, 16));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
+  bitmap_layer_set_bitmap(bt_layer, bt_icon);
   update_bt_icon(bluetooth_connection_service_peek());
   
   batt_layer = bitmap_layer_create(GRect(126, 18, 16, 8));
   layer_add_child(current_layer, bitmap_layer_get_layer(batt_layer));
   BatteryChargeState batt_state = battery_state_service_peek();
   handle_batt_update(batt_state);
+  battery_state_service_subscribe(handle_batt_update);
   
   layer_add_child(window_layer, current_layer);
   
@@ -511,12 +511,21 @@ static void window_load(Window *window) {
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
       sync_tuple_changed_callback, sync_error_callback, NULL);
   
+  // Get current time
+  struct tm *t;
+  time_t temp;
+  temp = time(NULL);
+  t = localtime(&temp);
+  
+  // Init time and date
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
 }
 
 static void window_unload(Window *window) {
   app_sync_deinit(&sync);
 
+  battery_state_service_unsubscribe();
+  
   if (icon_bitmap)
     gbitmap_destroy(icon_bitmap);
   
@@ -576,6 +585,8 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  tick_timer_service_unsubscribe();
+  bluetooth_connection_service_unsubscribe();
   if (bt_icon) {
     gbitmap_destroy(bt_icon);
   }
