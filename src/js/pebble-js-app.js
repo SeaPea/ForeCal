@@ -58,7 +58,6 @@ function iconFromWeatherId(weatherId) {
     case '0':  //tornado
       return 14; //Tornado
     case '1':  //tropical storm
-    case '2':  //hurricane
       return 15; //Storm
     case '13': //snow flurries
     case '14': //light snow showers
@@ -66,6 +65,8 @@ function iconFromWeatherId(weatherId) {
       return 16; //Light Snow
     case '36': //hot
       return 17; //Hot
+    case '2':  //hurricane
+      return 18; //Hurricane
     default:
       return 0; // N/A
   }
@@ -118,7 +119,7 @@ function fetchWeather(latitude, longitude) {
   reqLoc.onload = function(e) {
     if (reqLoc.readyState == 4) {
       if(reqLoc.status == 200) {
-        console.log(reqLoc.responseText);
+        //console.log(reqLoc.responseText);
         var response = JSON.parse(reqLoc.responseText);
         if (response && response.query && response.query.results && response.query.results.Result && 
             response.query.results.Result.woeid && response.query.results.Result.woeid !== '') {
@@ -149,7 +150,7 @@ function fetchWeather(latitude, longitude) {
             "low_temp":"",
             "icon":0,
             "condition":"",
-            "nightmode":1,
+            "daymode":0,
             "city":"Loc. N/A"});
         }
 
@@ -165,7 +166,7 @@ function fetchWeather(latitude, longitude) {
             "low_temp":"",
             "icon":0,
             "condition":"",
-            "nightmode":1,
+            "daymode":0,
             "city":"Err: " + reqLoc.status});
       }
     }
@@ -174,11 +175,11 @@ function fetchWeather(latitude, longitude) {
   reqWeather.onload = function(e) {
     if (reqWeather.readyState == 4) {
       if(reqWeather.status == 200) {
-        console.log(reqWeather.responseText);
+        //console.log(reqWeather.responseText);
         
         var curr_temp, curr_temp_str, sunrise, sunrise_str, sunset, sunset_str;
         var curr_time, forecast_day, forecast_date, high, low, icon, condition;
-        var nightmode, sun_rise_set;
+        var daymode, sun_rise_set;
         
         curr_time = new Date();
         
@@ -189,7 +190,7 @@ function fetchWeather(latitude, longitude) {
         else
           curr_temp = getXmlAttrVal(reqWeather.responseText, 'yweather:condition', 'temp') + '\u00B0' + unit ;
         
-        sun_rise_set = ''; nightmode = 1;
+        sun_rise_set = ''; daymode = 0;
         
         sunrise_str = getXmlAttrVal(reqWeather.responseText, 'yweather:astronomy', 'sunrise');
         sunset_str = getXmlAttrVal(reqWeather.responseText, 'yweather:astronomy', 'sunset');
@@ -201,10 +202,10 @@ function fetchWeather(latitude, longitude) {
           if (!isNaN(sunrise) && !isNaN(sunset)) {
             if (curr_time >= sunset || curr_time < sunrise) {
               sun_rise_set = sunrise.getHours() + ':' + (sunrise.getMinutes() < 10 ? '0' : '') + sunrise.getMinutes();
-              nightmode = 1;
+              daymode = 0;
             } else {
               sun_rise_set = sunset.getHours() + ':' + (sunset.getMinutes() < 10 ? '0' : '') + sunset.getMinutes();
-              nightmode = 0;
+              daymode = 1;
             }
           }
         }
@@ -273,7 +274,7 @@ function fetchWeather(latitude, longitude) {
             "low_temp":low,
             "icon":icon,
             "condition":condition,
-            "nightmode":nightmode,
+            "daymode":daymode,
             "city":city});
       } else {
         console.log("Error");
@@ -287,7 +288,7 @@ function fetchWeather(latitude, longitude) {
             "low_temp":"",
             "icon":0,
             "condition":"",
-            "nightmode":1,
+            "daymode":0,
             "city":"Err: " + reqWeather.status});
       }
     }

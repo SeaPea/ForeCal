@@ -8,9 +8,9 @@
     "versionLabel": "0.1.0",
     "appKeys": {
         "icon": 6,
-        "nightmode": 8,
         "condition": 7,
         "curr_temp": 1,
+        "daymode": 8,
         "forecast_day": 3,
         "high_temp": 4,
         "status": 0,
@@ -24,6 +24,11 @@
     "versionCode": 1,
     "resources": {
         "media": [
+            {
+                "file": "images/Hurricane.png",
+                "name": "IMAGE_HURRICANE",
+                "type": "png"
+            },
             {
                 "file": "images/Hot.png",
                 "name": "IMAGE_HOT",
