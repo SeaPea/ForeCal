@@ -2,6 +2,9 @@
 
 //#define DEBUG
   
+#define MyTupletCString(_key, _cstring) \
+((const Tuplet) { .type = TUPLE_CSTRING, .key = _key, .cstring = { .data = _cstring, .length = strlen(_cstring) + 1 }})
+  
 static Window *window;
 
 static Layer *current_layer = NULL;
@@ -109,11 +112,13 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       layer_set_hidden(bitmap_layer_get_layer(icon_layer), (new_tuple->value->uint8 == 0));
       icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[new_tuple->value->uint8]);
       bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
+      persist_write_int(WEATHER_ICON_KEY, new_tuple->value->uint8);
       break;
     case WEATHER_STATUS_KEY:
       // Save status for displaying after showing City for 5 seconds
       //snprintf(status, sizeof(status), "%s", new_tuple->value->cstring);
       strncpy(status, new_tuple->value->cstring, sizeof(status));
+      persist_write_string(WEATHER_STATUS_KEY, new_tuple->value->cstring);
       break;
     case WEATHER_CITY_KEY:
       text_layer_set_text(status_layer, new_tuple->value->cstring);
@@ -124,31 +129,43 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       else {
         status_timer = app_timer_register(5000, handle_status_timer, NULL);
       }
+      persist_write_string(WEATHER_CITY_KEY, new_tuple->value->cstring);
       break;
     case WEATHER_CURR_TEMP_KEY:
       text_layer_set_text(curr_temp_layer, new_tuple->value->cstring);
+  #ifdef DEBUG
+     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current Temp Storage Result: %d", persist_write_string(WEATHER_CURR_TEMP_KEY, new_tuple->value->cstring));
+  #else
+      persist_write_string(WEATHER_CURR_TEMP_KEY, new_tuple->value->cstring);
+  #endif
       break;
     case WEATHER_SUN_RISE_SET_KEY:
       // Show the sunrise or sunset time (only the next sunrise/sunset is shown)
       text_layer_set_text(sun_rise_set_layer, new_tuple->value->cstring);
       layer_set_hidden(bitmap_layer_get_layer(sun_layer), (strlen(new_tuple->value->cstring) == 0));
+      persist_write_string(WEATHER_SUN_RISE_SET_KEY, new_tuple->value->cstring);
       break;
     case WEATHER_FORECAST_DAY_KEY:
       text_layer_set_text(forecast_day_layer, new_tuple->value->cstring);
+      persist_write_string(WEATHER_FORECAST_DAY_KEY, new_tuple->value->cstring);
       break;
     case WEATHER_HIGH_TEMP_KEY:
       text_layer_set_text(high_temp_layer, new_tuple->value->cstring);
       layer_set_hidden(text_layer_get_layer(high_label_layer), strlen(new_tuple->value->cstring) == 0);
+      persist_write_string(WEATHER_HIGH_TEMP_KEY, new_tuple->value->cstring);
       break;
     case WEATHER_LOW_TEMP_KEY:
       text_layer_set_text(low_temp_layer, new_tuple->value->cstring);
       layer_set_hidden(text_layer_get_layer(low_label_layer), strlen(new_tuple->value->cstring) == 0);
+      persist_write_string(WEATHER_LOW_TEMP_KEY, new_tuple->value->cstring);
       break;
     case WEATHER_CONDITION_KEY:
       text_layer_set_text(condition_layer, new_tuple->value->cstring);
+      persist_write_string(WEATHER_CONDITION_KEY, new_tuple->value->cstring);
       break;
     case WEATHER_DAYMODE_KEY:
       layer_set_hidden(inverter_layer_get_layer(daymode_layer), (new_tuple->value->uint8 == 0));
+      persist_write_int(WEATHER_DAYMODE_KEY, new_tuple->value->uint8);
       if (sun_bitmap)
         gbitmap_destroy(sun_bitmap);
       
@@ -167,7 +184,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
 static void update_weather(void) {
   text_layer_set_text(status_layer, "Fetching...");
   
-  Tuplet value = TupletCString(WEATHER_STATUS_KEY, "Fetching...");
+  Tuplet value = TupletCString(WEATHER_CITY_KEY, "Fetching...");
 
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
@@ -294,13 +311,6 @@ static void handle_batt_update(BatteryChargeState batt_status) {
   }
   
   bitmap_layer_set_bitmap(batt_layer, batt_icon);
-}
-
-// Handle current layer (time, date, current temp) drawing updates
-static void current_layer_draw(Layer *layer, GContext *ctx) {
-  graphics_context_set_stroke_color(ctx, GColorWhite);
-  // Draw separator line at bottom of this layer
-  graphics_draw_line(ctx, GPoint(0, 57), GPoint(144, 57));
 }
 
 // Draw dates for a single week in the calendar
@@ -432,28 +442,27 @@ static void window_load(Window *window) {
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
   
   layer_add_child(window_layer, current_layer);
-  layer_set_update_proc(current_layer, current_layer_draw);
   
   // Setup forecast layer (High/Low Temp, conditions, sunrise/sunset)
-  forecast_layer = layer_create(GRect(0, 58, 144, 63));
+  forecast_layer = layer_create(GRect(0, 57, 144, 64));
   
-  forecast_day_layer = text_layer_create(GRect(0, -4, 64, 18));
-  text_layer_set_text_color(forecast_day_layer, GColorWhite);
-  text_layer_set_background_color(forecast_day_layer, GColorClear);
+  forecast_day_layer = text_layer_create(GRect(0, -4, 64, 17));
+  text_layer_set_text_color(forecast_day_layer, GColorBlack);
+  text_layer_set_background_color(forecast_day_layer, GColorWhite);
   text_layer_set_font(forecast_day_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
   text_layer_set_text_alignment(forecast_day_layer, GTextAlignmentLeft);
   text_layer_set_overflow_mode(forecast_day_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(forecast_day_layer));
   
-  status_layer = text_layer_create(GRect(60, -4, 80, 18));
-  text_layer_set_text_color(status_layer, GColorWhite);
-  text_layer_set_background_color(status_layer, GColorClear);
+  status_layer = text_layer_create(GRect(60, -4, 84, 17));
+  text_layer_set_text_color(status_layer, GColorBlack);
+  text_layer_set_background_color(status_layer, GColorWhite);
   text_layer_set_font(status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   text_layer_set_text_alignment(status_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(status_layer, GTextOverflowModeTrailingEllipsis);
   layer_add_child(forecast_layer, text_layer_get_layer(status_layer));
   
-  high_label_layer = text_layer_create(GRect(1, 5, 10, 24));
+  high_label_layer = text_layer_create(GRect(1, 6, 10, 24));
   text_layer_set_text_color(high_label_layer, GColorWhite);
   text_layer_set_background_color(high_label_layer, GColorClear);
   text_layer_set_font(high_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -463,7 +472,7 @@ static void window_load(Window *window) {
   layer_set_hidden(text_layer_get_layer(high_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(high_label_layer));
   
-  high_temp_layer = text_layer_create(GRect(9, 5, 45, 24));
+  high_temp_layer = text_layer_create(GRect(9, 6, 45, 24));
   text_layer_set_text_color(high_temp_layer, GColorWhite);
   text_layer_set_background_color(high_temp_layer, GColorClear);
   text_layer_set_font(high_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -471,7 +480,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(high_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(high_temp_layer));
   
-  low_label_layer = text_layer_create(GRect(1, 22, 10, 24));
+  low_label_layer = text_layer_create(GRect(1, 23, 10, 24));
   text_layer_set_text_color(low_label_layer, GColorWhite);
   text_layer_set_background_color(low_label_layer, GColorClear);
   text_layer_set_font(low_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -481,7 +490,7 @@ static void window_load(Window *window) {
   layer_set_hidden(text_layer_get_layer(low_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(low_label_layer));
   
-  low_temp_layer = text_layer_create(GRect(9, 22, 45, 24));
+  low_temp_layer = text_layer_create(GRect(9, 23, 45, 24));
   text_layer_set_text_color(low_temp_layer, GColorWhite);
   text_layer_set_background_color(low_temp_layer, GColorClear);
   text_layer_set_font(low_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -489,7 +498,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(low_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(low_temp_layer));
   
-  sun_rise_set_layer = text_layer_create(GRect(109, 25, 36, 18));
+  sun_rise_set_layer = text_layer_create(GRect(109, 26, 36, 18));
   text_layer_set_text_color(sun_rise_set_layer, GColorWhite);
   text_layer_set_background_color(sun_rise_set_layer, GColorClear);
   text_layer_set_font(sun_rise_set_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
@@ -497,13 +506,13 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(sun_rise_set_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(sun_rise_set_layer));
   
-  icon_layer = bitmap_layer_create(GRect(66, 13, 32, 32));
+  icon_layer = bitmap_layer_create(GRect(66, 16, 32, 32));
   layer_add_child(forecast_layer, bitmap_layer_get_layer(icon_layer));
   
-  sun_layer = bitmap_layer_create(GRect(117, 16, 20, 14));
+  sun_layer = bitmap_layer_create(GRect(117, 17, 20, 14));
   layer_add_child(forecast_layer, bitmap_layer_get_layer(sun_layer));
   
-  condition_layer = text_layer_create(GRect(0, 42, 144, 24));
+  condition_layer = text_layer_create(GRect(0, 43, 144, 24));
   text_layer_set_text_color(condition_layer, GColorWhite);
   text_layer_set_background_color(condition_layer, GColorClear);
   text_layer_set_font(condition_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
@@ -534,17 +543,63 @@ static void window_load(Window *window) {
   // Init time and date
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
+  static char status[50] = "Fetching...";
+  static char curr_temp[10] = "";
+  static char sun_rise_set[6] = "";
+  static char forecast_day[9] = "";
+  static char high_temp[10] = "";
+  static char low_temp[10] = "";
+  int icon = 0;
+  static char condition[50] = "";
+  int daymode = 0;
+  
+  // Get previously fetched results in case of comm error and use as initial values
+  if (persist_exists(WEATHER_STATUS_KEY))
+    persist_read_string(WEATHER_STATUS_KEY, status, 50);
+  
+  if (persist_exists(WEATHER_CURR_TEMP_KEY)) {
+    persist_read_string(WEATHER_CURR_TEMP_KEY, curr_temp, 10);
+#ifdef DEBUG
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Stored Current Temp: %s", curr_temp);
+#endif
+  } else {
+#ifdef DEBUG
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Current temp not stored");
+#endif
+  }
+  
+  if (persist_exists(WEATHER_SUN_RISE_SET_KEY))
+    persist_read_string(WEATHER_SUN_RISE_SET_KEY, sun_rise_set, 6);
+  
+  if (persist_exists(WEATHER_FORECAST_DAY_KEY))
+    persist_read_string(WEATHER_FORECAST_DAY_KEY, forecast_day, 9);
+  
+  if (persist_exists(WEATHER_HIGH_TEMP_KEY))
+    persist_read_string(WEATHER_HIGH_TEMP_KEY, high_temp, 10);
+  
+  if (persist_exists(WEATHER_LOW_TEMP_KEY))
+    persist_read_string(WEATHER_LOW_TEMP_KEY, low_temp, 10);
+  
+  if (persist_exists(WEATHER_ICON_KEY))
+    icon = persist_read_int(WEATHER_ICON_KEY);
+  
+  if (persist_exists(WEATHER_CONDITION_KEY))
+    persist_read_string(WEATHER_CONDITION_KEY, condition, 50);
+  
+  if (persist_exists(WEATHER_DAYMODE_KEY))
+    daymode = persist_read_int(WEATHER_DAYMODE_KEY);
+  
   // Initialize weather data fetching
   Tuplet initial_values[] = {
-    TupletCString(WEATHER_STATUS_KEY, "Fetching..."),
-    TupletCString(WEATHER_CURR_TEMP_KEY, ""),
-    TupletCString(WEATHER_SUN_RISE_SET_KEY, ""),
-    TupletCString(WEATHER_FORECAST_DAY_KEY, ""),
-    TupletCString(WEATHER_HIGH_TEMP_KEY, ""),
-    TupletCString(WEATHER_LOW_TEMP_KEY, ""),
-    TupletInteger(WEATHER_ICON_KEY, (uint8_t) 0),
-    TupletCString(WEATHER_CONDITION_KEY, ""),
-    TupletInteger(WEATHER_DAYMODE_KEY, (uint8_t) 0),
+    MyTupletCString(WEATHER_STATUS_KEY, status),
+    MyTupletCString(WEATHER_CURR_TEMP_KEY, curr_temp),
+    MyTupletCString(WEATHER_SUN_RISE_SET_KEY, sun_rise_set),
+    MyTupletCString(WEATHER_FORECAST_DAY_KEY, forecast_day),
+    MyTupletCString(WEATHER_HIGH_TEMP_KEY, high_temp),
+    MyTupletCString(WEATHER_LOW_TEMP_KEY, low_temp),
+    TupletInteger(WEATHER_ICON_KEY, (uint8_t) icon),
+    MyTupletCString(WEATHER_CONDITION_KEY, condition),
+    TupletInteger(WEATHER_DAYMODE_KEY, (uint8_t) daymode),
     TupletCString(WEATHER_CITY_KEY, "Fetching...")
   };
   

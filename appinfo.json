@@ -1,165 +1,165 @@
 {
-    "companyName": "SeaPea",
     "longName": "ForeCal",
-    "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
+    "versionCode": 2,
+    "shortName": "ForeCal",
     "capabilities": [
         "location"
     ],
-    "versionLabel": "0.1.0",
-    "appKeys": {
-        "icon": 6,
-        "condition": 7,
-        "curr_temp": 1,
-        "daymode": 8,
-        "forecast_day": 3,
-        "high_temp": 4,
-        "status": 0,
-        "city": 9,
-        "sun_rise_set": 2,
-        "low_temp": 5
-    },
-    "watchapp": {
-        "watchface": true
-    },
-    "versionCode": 1,
     "resources": {
         "media": [
             {
+                "type": "png",
                 "file": "images/Hurricane.png",
-                "name": "IMAGE_HURRICANE",
-                "type": "png"
+                "name": "IMAGE_HURRICANE"
             },
             {
+                "type": "png",
                 "file": "images/Hot.png",
-                "name": "IMAGE_HOT",
-                "type": "png"
+                "name": "IMAGE_HOT"
             },
             {
+                "type": "png",
                 "file": "images/LightSnow.png",
-                "name": "IMAGE_LIGHTSNOW",
-                "type": "png"
+                "name": "IMAGE_LIGHTSNOW"
             },
             {
+                "type": "png",
                 "file": "images/Storm.png",
-                "name": "IMAGE_STORM",
-                "type": "png"
+                "name": "IMAGE_STORM"
             },
             {
+                "type": "png",
                 "file": "images/Tornado.png",
-                "name": "IMAGE_TORNADO",
-                "type": "png"
+                "name": "IMAGE_TORNADO"
             },
             {
+                "type": "png",
                 "file": "images/Cold.png",
-                "name": "IMAGE_COLD",
-                "type": "png"
+                "name": "IMAGE_COLD"
             },
             {
+                "type": "png",
                 "file": "images/MixedSnow.png",
-                "name": "IMAGE_MIXEDSNOW",
-                "type": "png"
+                "name": "IMAGE_MIXEDSNOW"
             },
             {
+                "type": "png",
                 "file": "images/Snow.png",
-                "name": "IMAGE_SNOW",
-                "type": "png"
+                "name": "IMAGE_SNOW"
             },
             {
+                "type": "png",
                 "file": "images/Hail.png",
-                "name": "IMAGE_HAIL",
-                "type": "png"
+                "name": "IMAGE_HAIL"
             },
             {
+                "type": "png",
                 "file": "images/Rain.png",
-                "name": "IMAGE_RAIN",
-                "type": "png"
+                "name": "IMAGE_RAIN"
             },
             {
+                "type": "png",
                 "file": "images/Drizzle.png",
-                "name": "IMAGE_DRIZZLE",
-                "type": "png"
+                "name": "IMAGE_DRIZZLE"
             },
             {
+                "type": "png",
                 "file": "images/ScatteredThunderstorms.png",
-                "name": "IMAGE_SCATTEREDTHUNDERSTORMS",
-                "type": "png"
+                "name": "IMAGE_SCATTEREDTHUNDERSTORMS"
             },
             {
+                "type": "png",
                 "file": "images/IsolatedThunderstorms.png",
-                "name": "IMAGE_ISOLATEDTHUNDERSTORMS",
-                "type": "png"
+                "name": "IMAGE_ISOLATEDTHUNDERSTORMS"
             },
             {
+                "type": "png",
                 "file": "images/LowVisibility.png",
-                "name": "IMAGE_LOWVISIBILITY",
-                "type": "png"
+                "name": "IMAGE_LOWVISIBILITY"
             },
             {
+                "type": "png",
                 "file": "images/Windy.png",
-                "name": "IMAGE_WINDY",
-                "type": "png"
+                "name": "IMAGE_WINDY"
             },
             {
+                "type": "png",
                 "file": "images/Cloudy.png",
-                "name": "IMAGE_CLOUDY",
-                "type": "png"
+                "name": "IMAGE_CLOUDY"
             },
             {
+                "type": "png",
                 "file": "images/Sunny.png",
-                "name": "IMAGE_SUNNY",
-                "type": "png"
+                "name": "IMAGE_SUNNY"
             },
             {
+                "type": "png",
                 "file": "images/NA.png",
-                "name": "IMAGE_NA",
-                "type": "png"
+                "name": "IMAGE_NA"
             },
             {
+                "type": "png",
                 "file": "images/sunrise.png",
-                "name": "IMAGE_SUNRISE",
-                "type": "png"
+                "name": "IMAGE_SUNRISE"
             },
             {
+                "type": "png",
                 "file": "images/partlycloudy.png",
-                "name": "IMAGE_PARTLYCLOUDY",
-                "type": "png"
+                "name": "IMAGE_PARTLYCLOUDY"
             },
             {
+                "type": "png",
                 "file": "images/sunset.png",
-                "name": "IMAGE_SUNSET",
-                "type": "png"
+                "name": "IMAGE_SUNSET"
             },
             {
+                "type": "png",
                 "file": "images/Batt25.png",
-                "name": "IMAGE_BATT_25",
-                "type": "png"
+                "name": "IMAGE_BATT_25"
             },
             {
+                "type": "png",
                 "file": "images/Batt50.png",
-                "name": "IMAGE_BATT_50",
-                "type": "png"
+                "name": "IMAGE_BATT_50"
             },
             {
+                "type": "png",
                 "file": "images/Batt75.png",
-                "name": "IMAGE_BATT_75",
-                "type": "png"
+                "name": "IMAGE_BATT_75"
             },
             {
+                "type": "png",
                 "file": "images/Batt100.png",
-                "name": "IMAGE_BATT_100",
-                "type": "png"
+                "name": "IMAGE_BATT_100"
             },
             {
+                "type": "png",
                 "file": "images/BattCharge.png",
-                "name": "IMAGE_BATT_CHARGE",
-                "type": "png"
+                "name": "IMAGE_BATT_CHARGE"
             },
             {
+                "type": "png",
                 "file": "images/BT.png",
-                "name": "IMAGE_BT",
-                "type": "png"
+                "name": "IMAGE_BT"
             }
         ]
     },
-    "shortName": "ForeCal"
+    "versionLabel": "0.1.1",
+    "watchapp": {
+        "watchface": true
+    },
+    "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
+    "appKeys": {
+        "low_temp": 5,
+        "daymode": 8,
+        "city": 9,
+        "status": 0,
+        "icon": 6,
+        "condition": 7,
+        "high_temp": 4,
+        "forecast_day": 3,
+        "sun_rise_set": 2,
+        "curr_temp": 1
+    },
+    "companyName": "SeaPea"
 }
