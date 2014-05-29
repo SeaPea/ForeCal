@@ -1,6 +1,6 @@
 #include "pebble.h"
 
-//#define DEBUG
+// #define DEBUG
   
 #define MyTupletCString(_key, _cstring) \
 ((const Tuplet) { .type = TUPLE_CSTRING, .key = _key, .cstring = { .data = _cstring, .length = strlen(_cstring) + 1 }})
@@ -64,19 +64,30 @@ static char low_temp[10] = "";
 static int icon = 0;
 static char condition[50] = "";
 static int daymode = 0;
+static int sun_rise_hour = 99;
+static int sun_rise_min = 99;
+static int sun_set_hour = 99;
+static int sun_set_min = 99;
+static int auto_daymode = 99;
+static int prev_daytime = 99;
 
 // App Message Keys for Tuples transferred from Javascript
 enum WeatherKey {
-  WEATHER_STATUS_KEY = 0x0,
-  WEATHER_CURR_TEMP_KEY = 0x1,
-  WEATHER_SUN_RISE_SET_KEY = 0x2,
-  WEATHER_FORECAST_DAY_KEY = 0x3,
-  WEATHER_HIGH_TEMP_KEY = 0x4,
-  WEATHER_LOW_TEMP_KEY = 0x5,
-  WEATHER_ICON_KEY = 0x6,
-  WEATHER_CONDITION_KEY = 0x7,
-  WEATHER_DAYMODE_KEY = 0x8,
-  WEATHER_CITY_KEY = 0x9
+  WEATHER_STATUS_KEY = 0,
+  WEATHER_CURR_TEMP_KEY = 1,
+  WEATHER_SUN_RISE_SET_KEY = 2,
+  WEATHER_FORECAST_DAY_KEY = 3,
+  WEATHER_HIGH_TEMP_KEY = 4,
+  WEATHER_LOW_TEMP_KEY = 5,
+  WEATHER_ICON_KEY = 6,
+  WEATHER_CONDITION_KEY = 7,
+  WEATHER_DAYMODE_KEY = 8,
+  WEATHER_CITY_KEY = 9,
+  WEATHER_SUN_RISE_HOUR_KEY = 10,
+  WEATHER_SUN_RISE_MIN_KEY = 11,
+  WEATHER_SUN_SET_HOUR_KEY = 12,
+  WEATHER_SUN_SET_MIN_KEY = 13,
+  WEATHER_AUTO_DAYMODE_KEY = 14
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -118,16 +129,27 @@ static void handle_status_timer(void *data) {
     persist_write_int(WEATHER_ICON_KEY, icon);
     persist_write_string(WEATHER_STATUS_KEY, status);
     persist_write_string(WEATHER_CITY_KEY, city);
+#ifdef DEBUG
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Saving Current Temp: %s", curr_temp);
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Current Temp Storage Result: %d", persist_write_string(WEATHER_CURR_TEMP_KEY, curr_temp));
+#else
     persist_write_string(WEATHER_CURR_TEMP_KEY, curr_temp);
+#endif
     persist_write_string(WEATHER_SUN_RISE_SET_KEY, sun_rise_set);
     persist_write_string(WEATHER_FORECAST_DAY_KEY, forecast_day);
     persist_write_string(WEATHER_HIGH_TEMP_KEY, high_temp);
     persist_write_string(WEATHER_LOW_TEMP_KEY, low_temp);
     persist_write_string(WEATHER_CONDITION_KEY, condition);
     persist_write_int(WEATHER_DAYMODE_KEY, daymode);
+    persist_write_int(WEATHER_SUN_RISE_HOUR_KEY, sun_rise_hour);
+    persist_write_int(WEATHER_SUN_RISE_MIN_KEY, sun_rise_min);
+    persist_write_int(WEATHER_SUN_SET_HOUR_KEY, sun_set_hour);
+    persist_write_int(WEATHER_SUN_SET_MIN_KEY, sun_set_min);
+    persist_write_int(WEATHER_AUTO_DAYMODE_KEY, auto_daymode);
   }
 }
 
+// Timer event that fires after the initial tuple callback below
 static void handle_weatherinit_timer(void *data) {
 #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather init timer event fired");
@@ -142,6 +164,61 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
   text_layer_set_text(status_layer, "Comm error");
 }
 
+static void update_sun_layer(struct tm *t) {
+  if (sun_rise_hour != 99 && sun_rise_hour != 99 && sun_set_hour != 99 && sun_set_min != 99) {
+    
+    if (t == NULL) {
+      // Get current time
+      time_t temp;
+      temp = time(NULL);
+      t = localtime(&temp);
+    }
+    
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Rise Hour: %d, Sun Rise Minute: %d", sun_rise_hour, sun_rise_min);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Set Hour: %d, Sun Set Minute: %d", sun_set_hour, sun_set_min);
+#endif
+    
+    bool daytime = true;
+    
+    if (t->tm_hour < sun_rise_hour || (t->tm_hour == sun_rise_hour && t->tm_min <= sun_rise_min) ||
+        t->tm_hour > sun_set_hour || (t->tm_hour == sun_set_hour && t->tm_min >= sun_set_min))
+      daytime = false;
+    
+    if ((daytime && prev_daytime != 1) || (!daytime && prev_daytime != 0)) {
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Updating sun layer");
+#endif
+      
+      if (sun_bitmap)
+          gbitmap_destroy(sun_bitmap);
+      
+      if (t->tm_hour < sun_rise_hour || (t->tm_hour == sun_rise_hour && t->tm_min <= sun_rise_min) ||
+          t->tm_hour > sun_set_hour || (t->tm_hour == sun_set_hour && t->tm_min >= sun_set_min)) {
+        // Night
+        snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_rise_hour, sun_rise_min);
+        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
+        prev_daytime = 0;
+      } else {
+        // Day
+        snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_set_hour, sun_set_min);
+        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
+        prev_daytime = 1;
+      }
+      
+      if (auto_daymode == 1) 
+        layer_set_hidden(inverter_layer_get_layer(daymode_layer), !daytime);
+      
+      bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
+      text_layer_set_text(sun_rise_set_layer, sun_rise_set);
+      layer_set_hidden(bitmap_layer_get_layer(sun_layer), false);
+    }
+  } else {
+    text_layer_set_text(sun_rise_set_layer, "");
+    layer_set_hidden(bitmap_layer_get_layer(sun_layer), true);
+  }
+}
+
 // Event fired when data received from Javascript
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   switch (key) {
@@ -149,20 +226,18 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       if (icon_bitmap) {
         gbitmap_destroy(icon_bitmap);
       }
-      layer_set_hidden(bitmap_layer_get_layer(icon_layer), (new_tuple->value->uint8 == 0));
-      icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[new_tuple->value->uint8]);
-      bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
       icon = new_tuple->value->uint8;
-      if (!loading) persist_write_int(WEATHER_ICON_KEY, icon);
+      layer_set_hidden(bitmap_layer_get_layer(icon_layer), (icon == 0));
+      icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[icon]);
+      bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
       break;
     case WEATHER_STATUS_KEY:
       // Save status for displaying after showing City for 5 seconds
       strncpy(status, new_tuple->value->cstring, sizeof(status));
-      if (!loading) persist_write_string(WEATHER_STATUS_KEY, status);
       break;
     case WEATHER_CITY_KEY:
-      text_layer_set_text(status_layer, new_tuple->value->cstring);
       strncpy(city, new_tuple->value->cstring, sizeof(city));
+      text_layer_set_text(status_layer, city);
       // Show City for 5 seconds and then replace with Status
       if (status_timer) {
         app_timer_reschedule(status_timer, 5000);
@@ -170,67 +245,72 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       else {
         status_timer = app_timer_register(5000, handle_status_timer, NULL);
       }
-      if (!loading) persist_write_string(WEATHER_CITY_KEY, city);
       break;
     case WEATHER_CURR_TEMP_KEY:
-      text_layer_set_text(curr_temp_layer, new_tuple->value->cstring);
-      strncpy(curr_temp, new_tuple->value->cstring, sizeof(curr_temp)); 
+      strncpy(curr_temp, new_tuple->value->cstring, sizeof(curr_temp));
+      text_layer_set_text(curr_temp_layer, curr_temp); 
 #ifdef DEBUG
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Displaying Current Temp: %s", curr_temp);
 #endif
-      if (!loading) {
-#ifdef DEBUG
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Saving Current Temp: %s", curr_temp);
-        APP_LOG(APP_LOG_LEVEL_DEBUG, "Current Temp Storage Result: %d", persist_write_string(WEATHER_CURR_TEMP_KEY, curr_temp));
-#else
-        persist_write_string(WEATHER_CURR_TEMP_KEY, curr_temp);
-#endif
-      }
       break;
-    case WEATHER_SUN_RISE_SET_KEY:
+    /*case WEATHER_SUN_RISE_SET_KEY:
       // Show the sunrise or sunset time (only the next sunrise/sunset is shown)
-      text_layer_set_text(sun_rise_set_layer, new_tuple->value->cstring);
-      layer_set_hidden(bitmap_layer_get_layer(sun_layer), (strlen(new_tuple->value->cstring) == 0));
       strncpy(sun_rise_set, new_tuple->value->cstring, sizeof(sun_rise_set));
-      if (!loading) persist_write_string(WEATHER_SUN_RISE_SET_KEY, sun_rise_set);
-      break;
+      text_layer_set_text(sun_rise_set_layer, sun_rise_set);
+      layer_set_hidden(bitmap_layer_get_layer(sun_layer), (strlen(sun_rise_set) == 0));
+      break;*/
     case WEATHER_FORECAST_DAY_KEY:
-      text_layer_set_text(forecast_day_layer, new_tuple->value->cstring);
       strncpy(forecast_day, new_tuple->value->cstring, sizeof(forecast_day));
-      if (!loading) persist_write_string(WEATHER_FORECAST_DAY_KEY, forecast_day);
+      text_layer_set_text(forecast_day_layer, forecast_day);
       break;
     case WEATHER_HIGH_TEMP_KEY:
-      text_layer_set_text(high_temp_layer, new_tuple->value->cstring);
-      layer_set_hidden(text_layer_get_layer(high_label_layer), strlen(new_tuple->value->cstring) == 0);
       strncpy(high_temp, new_tuple->value->cstring, sizeof(high_temp));
-      if (!loading) persist_write_string(WEATHER_HIGH_TEMP_KEY, high_temp);
+      text_layer_set_text(high_temp_layer, high_temp);
+      layer_set_hidden(text_layer_get_layer(high_label_layer), strlen(high_temp) == 0);
       break;
     case WEATHER_LOW_TEMP_KEY:
-      text_layer_set_text(low_temp_layer, new_tuple->value->cstring);
-      layer_set_hidden(text_layer_get_layer(low_label_layer), strlen(new_tuple->value->cstring) == 0);
       strncpy(low_temp, new_tuple->value->cstring, sizeof(low_temp));
-      if (!loading) persist_write_string(WEATHER_LOW_TEMP_KEY, low_temp);
+      text_layer_set_text(low_temp_layer, low_temp);
+      layer_set_hidden(text_layer_get_layer(low_label_layer), strlen(low_temp) == 0);
       break;
     case WEATHER_CONDITION_KEY:
-      text_layer_set_text(condition_layer, new_tuple->value->cstring);
       strncpy(condition, new_tuple->value->cstring, sizeof(condition));
-      if (!loading) persist_write_string(WEATHER_CONDITION_KEY, condition);
+      text_layer_set_text(condition_layer, condition);
       break;
     case WEATHER_DAYMODE_KEY:
-      layer_set_hidden(inverter_layer_get_layer(daymode_layer), (new_tuple->value->uint8 == 0));
       daymode = new_tuple->value->uint8;
-      if (!loading) persist_write_int(WEATHER_DAYMODE_KEY, daymode);
+      layer_set_hidden(inverter_layer_get_layer(daymode_layer), (daymode == 0));
       if (sun_bitmap)
         gbitmap_destroy(sun_bitmap);
       
       // 'Daymode' is defined as the time being between Sunrise and Sunset so it
       // can be also used to determine the correct Sunrise/Sunset icon to display
-      if (new_tuple->value->uint8 == 0)
+      if (daymode == 0)
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
       else
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
       bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
-      break;  
+      break;
+    case WEATHER_SUN_RISE_HOUR_KEY:
+      sun_rise_hour = new_tuple->value->uint8;
+      update_sun_layer(NULL);
+      break;
+    case WEATHER_SUN_RISE_MIN_KEY:
+      sun_rise_min = new_tuple->value->uint8;
+      update_sun_layer(NULL);
+      break;
+    case WEATHER_SUN_SET_HOUR_KEY:
+      sun_set_hour = new_tuple->value->uint8;
+      update_sun_layer(NULL);
+      break;
+    case WEATHER_SUN_SET_MIN_KEY:
+      sun_set_min = new_tuple->value->uint8;
+      update_sun_layer(NULL);
+      break;
+    case WEATHER_AUTO_DAYMODE_KEY:
+      auto_daymode = new_tuple->value->uint8;
+      update_sun_layer(NULL);
+      break;
   }
 }
 
@@ -264,6 +344,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     if (tick_time->tm_min % 20 == 0) {
       update_weather(); // Update the weather every 20 minutes
     }
+    update_sun_layer(tick_time);
   }
   if ((units_changed & HOUR_UNIT) != 0) {
 #ifdef DEBUG
@@ -614,8 +695,8 @@ static void window_load(Window *window) {
 #endif
   }
   
-  if (persist_exists(WEATHER_SUN_RISE_SET_KEY))
-    persist_read_string(WEATHER_SUN_RISE_SET_KEY, sun_rise_set, sizeof(sun_rise_set));
+  /*if (persist_exists(WEATHER_SUN_RISE_SET_KEY))
+    persist_read_string(WEATHER_SUN_RISE_SET_KEY, sun_rise_set, sizeof(sun_rise_set));*/
   
   if (persist_exists(WEATHER_FORECAST_DAY_KEY))
     persist_read_string(WEATHER_FORECAST_DAY_KEY, forecast_day, sizeof(forecast_day));
@@ -635,18 +716,38 @@ static void window_load(Window *window) {
   if (persist_exists(WEATHER_DAYMODE_KEY))
     daymode = persist_read_int(WEATHER_DAYMODE_KEY);
   
+  if (persist_exists(WEATHER_SUN_RISE_HOUR_KEY))
+    sun_rise_hour = persist_read_int(WEATHER_SUN_RISE_HOUR_KEY);
+  
+  if (persist_exists(WEATHER_SUN_RISE_MIN_KEY))
+    sun_rise_min = persist_read_int(WEATHER_SUN_RISE_MIN_KEY);
+  
+  if (persist_exists(WEATHER_SUN_SET_HOUR_KEY))
+    sun_set_hour = persist_read_int(WEATHER_SUN_SET_HOUR_KEY);
+  
+  if (persist_exists(WEATHER_SUN_SET_MIN_KEY))
+    sun_set_min = persist_read_int(WEATHER_SUN_SET_MIN_KEY);
+  
+  if (persist_exists(WEATHER_AUTO_DAYMODE_KEY))
+    auto_daymode = persist_read_int(WEATHER_AUTO_DAYMODE_KEY);
+  
   // Initialize weather data fetching
   Tuplet initial_values[] = {
     MyTupletCString(WEATHER_STATUS_KEY, status),
     MyTupletCString(WEATHER_CURR_TEMP_KEY, curr_temp),
-    MyTupletCString(WEATHER_SUN_RISE_SET_KEY, sun_rise_set),
+    //MyTupletCString(WEATHER_SUN_RISE_SET_KEY, sun_rise_set),
     MyTupletCString(WEATHER_FORECAST_DAY_KEY, forecast_day),
     MyTupletCString(WEATHER_HIGH_TEMP_KEY, high_temp),
     MyTupletCString(WEATHER_LOW_TEMP_KEY, low_temp),
     TupletInteger(WEATHER_ICON_KEY, (uint8_t) icon),
     MyTupletCString(WEATHER_CONDITION_KEY, condition),
     TupletInteger(WEATHER_DAYMODE_KEY, (uint8_t) daymode),
-    TupletCString(WEATHER_CITY_KEY, "Fetching...")
+    TupletCString(WEATHER_CITY_KEY, "Fetching..."),
+    TupletInteger(WEATHER_SUN_RISE_HOUR_KEY, (uint8_t) sun_rise_hour),
+    TupletInteger(WEATHER_SUN_RISE_MIN_KEY, (uint8_t) sun_rise_min),
+    TupletInteger(WEATHER_SUN_SET_HOUR_KEY, (uint8_t) sun_set_hour),
+    TupletInteger(WEATHER_SUN_SET_MIN_KEY, (uint8_t) sun_set_min),
+    TupletInteger(WEATHER_AUTO_DAYMODE_KEY, (uint8_t) auto_daymode),
   };
   
   // Initialize and trigger weather data Javascript call

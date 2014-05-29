@@ -155,14 +155,18 @@ function fetchWeather(latitude, longitude) {
           Pebble.sendAppMessage({
             "status":"Loc. N/A",
             "curr_temp":"",
-            "sun_rise_set":"",
             "forecast_day":"",
             "high_temp":"",
             "low_temp":"",
             "icon":0,
             "condition":"",
             "daymode":0,
-            "city":"Loc. N/A"});
+            "city":"Loc. N/A",
+            "sun_rise_hour":99,
+            "sun_rise_min":99,
+            "sun_set_hour":99,
+            "sun_set_min":99,
+            "auto_daymode":1});
         }
 
       } else {
@@ -171,14 +175,18 @@ function fetchWeather(latitude, longitude) {
         Pebble.sendAppMessage({
             "status":"Err: " + reqLoc.status,
             "curr_temp":"",
-            "sun_rise_set":"",
             "forecast_day":"",
             "high_temp":"",
             "low_temp":"",
             "icon":0,
             "condition":"",
             "daymode":0,
-            "city":"Err: " + reqLoc.status});
+            "city":"Err: " + reqLoc.status,
+            "sun_rise_hour":99,
+            "sun_rise_min":99,
+            "sun_set_hour":99,
+            "sun_set_min":99,
+            "auto_daymode":1});
       }
     }
   };
@@ -217,11 +225,11 @@ function fetchWeather(latitude, longitude) {
           if (!isNaN(sunrise) && !isNaN(sunset)) {
             if (curr_time >= sunset || curr_time < sunrise) {
               // Nighttime
-              sun_rise_set = sunrise.getHours() + ':' + (sunrise.getMinutes() < 10 ? '0' : '') + sunrise.getMinutes();
+              //sun_rise_set = sunrise.getHours() + ':' + (sunrise.getMinutes() < 10 ? '0' : '') + sunrise.getMinutes();
               daymode = 0;
             } else {
               // Daytime
-              sun_rise_set = sunset.getHours() + ':' + (sunset.getMinutes() < 10 ? '0' : '') + sunset.getMinutes();
+              //sun_rise_set = sunset.getHours() + ':' + (sunset.getMinutes() < 10 ? '0' : '') + sunset.getMinutes();
               daymode = 1;
             }
           }
@@ -291,28 +299,36 @@ function fetchWeather(latitude, longitude) {
         Pebble.sendAppMessage({
             "status":status,
             "curr_temp":curr_temp,
-            "sun_rise_set":sun_rise_set,
             "forecast_day":forecast_day,
             "high_temp":high,
             "low_temp":low,
             "icon":icon,
             "condition":condition,
             "daymode":daymode,
-            "city":city});
+            "city":city,
+            "sun_rise_hour":sunrise.getHours(),
+            "sun_rise_min":sunrise.getMinutes(),
+            "sun_set_hour":sunset.getHours(),
+            "sun_set_min":sunset.getMinutes(),
+            "auto_daymode":1});
       } else {
         console.log("Error");
         
         Pebble.sendAppMessage({
             "status":"Err: " + reqWeather.status,
             "curr_temp":"",
-            "sun_rise_set":"",
             "forecast_day":"",
             "high_temp":"",
             "low_temp":"",
             "icon":0,
             "condition":"",
             "daymode":0,
-            "city":"Err: " + reqWeather.status});
+            "city":"Err: " + reqWeather.status,
+            "sun_rise_hour":99,
+            "sun_rise_min":99,
+            "sun_set_hour":99,
+            "sun_set_min":99,
+            "auto_daymode":1});
       }
     }
   };
