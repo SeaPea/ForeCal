@@ -113,12 +113,19 @@ static const uint32_t WEATHER_ICONS[] = {
   RESOURCE_ID_IMAGE_HURRICANE //18
 };
 
-// Timer event that shows status after displaying the City for 5 seconds
+// Timer event that shows status after displaying the City/Error for 5 seconds
 static void handle_status_timer(void *data) {
 #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Status timer event fired");
 #endif
-  text_layer_set_text(status_layer, status);
+  if (status != NULL && strlen(status) > 0)
+    text_layer_set_text(status_layer, status);
+  else {
+#ifdef DEBUG
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Status is blank");
+#endif
+  }
+  
   status_timer = NULL;
   if (!loading) {
     // Save weather data after initial call and after a brief delay since 

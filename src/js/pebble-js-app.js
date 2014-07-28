@@ -1,3 +1,5 @@
+var lastSuccess;
+
 // Convert/Reduce Yahoo weather codes to our weather icons
 function iconFromWeatherId(weatherId) {
   switch (weatherId) {
@@ -115,6 +117,18 @@ function addDays(date, days) {
 
 // Fetch the weather data from Yahoo and transmit to Pebble
 function fetchWeather(latitude, longitude) {
+  
+  console.log("### FETCHING WEATHER ###");
+  
+  var curr_time;
+  curr_time = new Date();
+  
+  // Don't fetch weather again unless it was over 20 minutes ago
+  if (lastSuccess && Math.round((curr_time - lastSuccess) / 60000) <= 20) {
+    console.log("Not fetching - less than 20 minutes since last success: " + Math.round((curr_time - lastSuccess) / 60000));
+    return;
+  }
+  
   var country, city, woeid, unit, status;
   var reqLoc = new XMLHttpRequest();
   var reqWeather = new XMLHttpRequest();
@@ -153,40 +167,14 @@ function fetchWeather(latitude, longitude) {
         } else {
           // WOEID not found
           Pebble.sendAppMessage({
-            "status":"Loc. N/A",
-            "curr_temp":"",
-            "forecast_day":"",
-            "high_temp":"",
-            "low_temp":"",
-            "icon":0,
-            "condition":"",
-            "daymode":0,
-            "city":"Loc. N/A",
-            "sun_rise_hour":99,
-            "sun_rise_min":99,
-            "sun_set_hour":99,
-            "sun_set_min":99,
-            "auto_daymode":1});
+            "city":"Loc. N/A"}); // Show error breifly
         }
 
       } else {
         console.log("Error");
         
         Pebble.sendAppMessage({
-            "status":"Err: " + reqLoc.status,
-            "curr_temp":"",
-            "forecast_day":"",
-            "high_temp":"",
-            "low_temp":"",
-            "icon":0,
-            "condition":"",
-            "daymode":0,
-            "city":"Err: " + reqLoc.status,
-            "sun_rise_hour":99,
-            "sun_rise_min":99,
-            "sun_set_hour":99,
-            "sun_set_min":99,
-            "auto_daymode":1});
+            "city":"Err: " + reqLoc.status}); // Show error briefly
       }
     }
   };
@@ -295,6 +283,8 @@ function fetchWeather(latitude, longitude) {
         console.log('Condition: ' + condition);
         console.log('Icon: ' + icon);
         
+        lastSuccess = curr_time;
+        
         // Send the data to the Pebble
         Pebble.sendAppMessage({
             "status":status,
@@ -315,20 +305,7 @@ function fetchWeather(latitude, longitude) {
         console.log("Error");
         
         Pebble.sendAppMessage({
-            "status":"Err: " + reqWeather.status,
-            "curr_temp":"",
-            "forecast_day":"",
-            "high_temp":"",
-            "low_temp":"",
-            "icon":0,
-            "condition":"",
-            "daymode":0,
-            "city":"Err: " + reqWeather.status,
-            "sun_rise_hour":99,
-            "sun_rise_min":99,
-            "sun_set_hour":99,
-            "sun_set_min":99,
-            "auto_daymode":1});
+            "city":"Err: " + reqWeather.status}); // Show error briefly
       }
     }
   };
@@ -340,13 +317,13 @@ function fetchWeather(latitude, longitude) {
 function locationSuccess(pos) {
   // Got our Lat/Long so now fetch the weather data
   var coordinates = pos.coords;
+  console.log("GPS location: " + coordinates.latitude + ", " + coordinates.longitude);
   fetchWeather(coordinates.latitude, coordinates.longitude);
 }
 
 function locationError(err) {
   console.warn('Location error (' + err.code + '): ' + err.message);
   Pebble.sendAppMessage({
-    "status":"GPS N/A",
     "city":"GPS N/A"
   });
 }
@@ -364,13 +341,22 @@ Pebble.addEventListener("ready",
 Pebble.addEventListener("appmessage",
                         function(e) {
                           // Trigger location and weather fetch on command from Pebble
+                          lastSuccess = null;
                           window.navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
                           console.log("Pebble App Message!");
                         });
 
+/* Pebble.addEventListener("showConfiguration", 
+                         function() {
+                            console.log("Showing Config");
+                            Pebble.openURL(' http://x.setpebble.com/api/S7H7/36ad0db1-03e6-4a33-bcda-15e92a541ffc');
+                          });
+
 Pebble.addEventListener("webviewclosed",
-                                     function(e) {
-                                     console.log("Webview closed");
-                                     });
+                         function(e) {
+                            console.log("Webview closed");
+                            var options = JSON.parse(decodeURIComponent(e.response));
+                            console.log("Options: " + JSON.stringify(options));
+                         }); */
 
 
