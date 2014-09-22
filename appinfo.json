@@ -18,7 +18,8 @@
         "update_interval": 15
     },
     "capabilities": [
-        "location"
+        "location",
+        "configurable"
     ],
     "companyName": "SeaPea",
     "longName": "ForeCal",
@@ -165,7 +166,7 @@
     "shortName": "ForeCal",
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
     "versionCode": 2,
-    "versionLabel": "0.1.5",
+    "versionLabel": "0.9",
     "watchapp": {
         "watchface": true
     }

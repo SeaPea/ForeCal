@@ -1,5 +1,13 @@
 var lastSuccess;
 
+var cfgColorScheme = 'BlackOnWhite';
+var cfgForecastHour = 20;
+var cfgForecastMin = 15;
+var cfgUseGPS = false;
+var cfgWeatherLoc = 'Cape Coral, FL';
+var cfgTempUnit = 'F';
+var cfgUpdateInterval = 30;
+
 // Convert/Reduce Yahoo weather codes to our weather icons
 function iconFromWeatherId(weatherId) {
   switch (weatherId) {
@@ -346,17 +354,26 @@ Pebble.addEventListener("appmessage",
                           console.log("Pebble App Message!");
                         });
 
-/* Pebble.addEventListener("showConfiguration", 
+Pebble.addEventListener("showConfiguration", 
                          function() {
-                            console.log("Showing Config");
-                            Pebble.openURL(' http://x.setpebble.com/api/S7H7/36ad0db1-03e6-4a33-bcda-15e92a541ffc');
+                           console.log("Showing Settings");
+                           var settingsURL = 'http://www.cpinkney.net/ForeCal/Settings-0_9.html?ColorScheme=' + cfgColorScheme + '&ForecastHour=' + cfgForecastHour +
+                                         '&ForecastMin=' + cfgForecastMin + '&UseGPS=' + cfgUseGPS + '&WeatherLoc=' + encodeURIComponent(cfgWeatherLoc) + '&TempUnit=' + cfgTempUnit +
+                                         '&UpdateInterval=' + cfgUpdateInterval;
+                           console.log("Settings URL: " + settingsURL);
+                           Pebble.openURL(settingsURL);
                           });
 
 Pebble.addEventListener("webviewclosed",
                          function(e) {
-                            console.log("Webview closed");
-                            var options = JSON.parse(decodeURIComponent(e.response));
-                            console.log("Options: " + JSON.stringify(options));
-                         }); */
+                           console.log("Webview closed");
+                           if (e.response) {
+                             var settings = JSON.parse(decodeURIComponent(e.response));
+                             console.log("Settings returned: " + JSON.stringify(settings));
+                           }
+                           else {
+                             console.log("Settings cancelled");
+                           }
+                         });
 
 
