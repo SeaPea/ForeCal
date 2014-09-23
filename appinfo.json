@@ -1,10 +1,12 @@
 {
     "appKeys": {
         "auto_daymode": 14,
+        "cal_offset": 17,
         "city": 9,
         "condition": 7,
         "curr_temp": 1,
         "daymode": 8,
+        "first_day": 16,
         "forecast_day": 3,
         "high_temp": 4,
         "icon": 6,
@@ -166,7 +168,7 @@
     "shortName": "ForeCal",
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
     "versionCode": 2,
-    "versionLabel": "0.9",
+    "versionLabel": "1.0",
     "watchapp": {
         "watchface": true
     }

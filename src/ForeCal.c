@@ -1,6 +1,6 @@
 #include "pebble.h"
 
-// #define DEBUG
+#define DEBUG
   
 #define MyTupletCString(_key, _cstring) \
 ((const Tuplet) { .type = TUPLE_CSTRING, .key = _key, .cstring = { .data = _cstring, .length = strlen(_cstring) + 1 }})
@@ -45,6 +45,8 @@ static InverterLayer *curr_date_layer = NULL;
 static InverterLayer *daymode_layer = NULL;
 
 static const uint32_t bt_warn_pattern[] = { 1000, 500, 1000 };
+static int update_interval = 20;
+static int cal_offset = 0;
 static int startday = 0;
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
@@ -87,7 +89,10 @@ enum WeatherKey {
   WEATHER_SUN_RISE_MIN_KEY = 11,
   WEATHER_SUN_SET_HOUR_KEY = 12,
   WEATHER_SUN_SET_MIN_KEY = 13,
-  WEATHER_AUTO_DAYMODE_KEY = 14
+  WEATHER_AUTO_DAYMODE_KEY = 14,
+  WEATHER_UPDATE_INTERVAL_KEY = 15,
+  CAL_FIRST_DAY_KEY = 16,
+  CAL_OFFSET_KEY = 17
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -153,6 +158,9 @@ static void handle_status_timer(void *data) {
     persist_write_int(WEATHER_SUN_SET_HOUR_KEY, sun_set_hour);
     persist_write_int(WEATHER_SUN_SET_MIN_KEY, sun_set_min);
     persist_write_int(WEATHER_AUTO_DAYMODE_KEY, auto_daymode);
+    persist_write_int(WEATHER_UPDATE_INTERVAL_KEY, update_interval);
+    persist_write_int(CAL_FIRST_DAY_KEY, startday);
+    persist_write_int(CAL_OFFSET_KEY, cal_offset);
   }
 }
 
@@ -228,6 +236,7 @@ static void update_sun_layer(struct tm *t) {
 
 // Event fired when data received from Javascript
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Message Key: %d", (int)key);
   switch (key) {
     case WEATHER_ICON_KEY:
       if (icon_bitmap) {
@@ -287,16 +296,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
     case WEATHER_DAYMODE_KEY:
       daymode = new_tuple->value->uint8;
       layer_set_hidden(inverter_layer_get_layer(daymode_layer), (daymode == 0));
-      if (sun_bitmap)
-        gbitmap_destroy(sun_bitmap);
-      
-      // 'Daymode' is defined as the time being between Sunrise and Sunset so it
-      // can be also used to determine the correct Sunrise/Sunset icon to display
-      if (daymode == 0)
-        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
-      else
-        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
-      bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
+      update_sun_layer(NULL);
       break;
     case WEATHER_SUN_RISE_HOUR_KEY:
       sun_rise_hour = new_tuple->value->uint8;
@@ -317,6 +317,23 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
     case WEATHER_AUTO_DAYMODE_KEY:
       auto_daymode = new_tuple->value->uint8;
       update_sun_layer(NULL);
+      break;
+    case WEATHER_UPDATE_INTERVAL_KEY:
+      update_interval = new_tuple->value->uint8;
+      break;
+    case CAL_FIRST_DAY_KEY:
+      startday = new_tuple->value->uint8;
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "First Day: %d", startday);
+#endif
+      layer_mark_dirty(cal_layer);
+      break;
+    case CAL_OFFSET_KEY:
+      cal_offset = new_tuple->value->uint8;
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Calendar Offset: %d", cal_offset);
+#endif
+      layer_mark_dirty(cal_layer);
       break;
   }
 }
@@ -348,8 +365,8 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 #ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
 #endif
-    if (tick_time->tm_min % 20 == 0) {
-      update_weather(); // Update the weather every 20 minutes
+    if ((update_interval == 0 && tick_time->tm_min == 0) || tick_time->tm_min % update_interval == 0) {
+      update_weather(); // Update the weather every X minutes
     }
     update_sun_layer(tick_time);
   }
@@ -523,15 +540,15 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   int curr_mon_len = 31 - ((curr_mon == 2) ? (3 - leap_year) : ((curr_mon - 1) % 7 % 2));
   
   // Draw previous week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + startday, curr_mon_len, prev_mon_len, GColorWhite, 7);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + startday + cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 7);
   // Draw current week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + startday, curr_mon_len, prev_mon_len, GColorBlack, 19);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + startday + cal_offset, curr_mon_len, prev_mon_len, GColorBlack, 19);
   // Draw next week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + startday, curr_mon_len, prev_mon_len, GColorWhite, 31);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + startday + cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 31);
   
   // Invert current date colors to highlight it
   int curr_day = (t->tm_wday + 7 - startday) % 7;
-  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((curr_day  * 20) + curr_day, 23, 19, 11));
+  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((curr_day  * 20) + curr_day, 23 - ((cal_offset/7)*11), 19, 11));
 }
 
 static void window_load(Window *window) {
@@ -666,6 +683,12 @@ static void window_load(Window *window) {
   
   layer_add_child(window_layer, forecast_layer);
   
+  if (persist_exists(CAL_FIRST_DAY_KEY))
+    startday = persist_read_int(CAL_FIRST_DAY_KEY);
+  
+  if (persist_exists(CAL_OFFSET_KEY))
+    cal_offset = persist_read_int(CAL_OFFSET_KEY);
+  
   // Setup 3 week calendar layer
   cal_layer = layer_create(GRect(0, 122, 144, 47));
   layer_add_child(window_layer, cal_layer);
@@ -738,6 +761,9 @@ static void window_load(Window *window) {
   if (persist_exists(WEATHER_AUTO_DAYMODE_KEY))
     auto_daymode = persist_read_int(WEATHER_AUTO_DAYMODE_KEY);
   
+  if (persist_exists(WEATHER_UPDATE_INTERVAL_KEY))
+    update_interval = persist_read_int(WEATHER_UPDATE_INTERVAL_KEY);
+  
   // Initialize weather data fetching
   Tuplet initial_values[] = {
     MyTupletCString(WEATHER_STATUS_KEY, status),
@@ -754,7 +780,7 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_SUN_RISE_MIN_KEY, (uint8_t) sun_rise_min),
     TupletInteger(WEATHER_SUN_SET_HOUR_KEY, (uint8_t) sun_set_hour),
     TupletInteger(WEATHER_SUN_SET_MIN_KEY, (uint8_t) sun_set_min),
-    TupletInteger(WEATHER_AUTO_DAYMODE_KEY, (uint8_t) auto_daymode),
+    TupletInteger(WEATHER_AUTO_DAYMODE_KEY, (uint8_t) auto_daymode)
   };
   
   // Initialize and trigger weather data Javascript call
