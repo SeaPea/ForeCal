@@ -1,6 +1,6 @@
 #include "pebble.h"
 
-#define DEBUG
+//#define DEBUG
   
 #define MyTupletCString(_key, _cstring) \
 ((const Tuplet) { .type = TUPLE_CSTRING, .key = _key, .cstring = { .data = _cstring, .length = strlen(_cstring) + 1 }})
@@ -51,7 +51,7 @@ static int startday = 0;
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
 static AppSync sync;
-static uint8_t sync_buffer[256];
+static uint8_t sync_buffer[512];
 
 static char current_time[] = "00:00";
 static char current_date[] = "Sun Jan 01";
@@ -190,8 +190,8 @@ static void update_sun_layer(struct tm *t) {
     }
     
 #ifdef DEBUG
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Rise Hour: %d, Sun Rise Minute: %d", sun_rise_hour, sun_rise_min);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Set Hour: %d, Sun Set Minute: %d", sun_set_hour, sun_set_min);
+      //APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Rise Hour: %d, Sun Rise Minute: %d", sun_rise_hour, sun_rise_min);
+      //APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Set Hour: %d, Sun Set Minute: %d", sun_set_hour, sun_set_min);
 #endif
     
     bool daytime = true;
@@ -236,7 +236,7 @@ static void update_sun_layer(struct tm *t) {
 
 // Event fired when data received from Javascript
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Message Key: %d", (int)key);
+  //APP_LOG(APP_LOG_LEVEL_DEBUG, "Message Key: %d", (int)key);
   switch (key) {
     case WEATHER_ICON_KEY:
       if (icon_bitmap) {
@@ -320,6 +320,9 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_UPDATE_INTERVAL_KEY:
       update_interval = new_tuple->value->uint8;
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Update Interval: %d", update_interval);
+#endif
       break;
     case CAL_FIRST_DAY_KEY:
       startday = new_tuple->value->uint8;
@@ -780,7 +783,10 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_SUN_RISE_MIN_KEY, (uint8_t) sun_rise_min),
     TupletInteger(WEATHER_SUN_SET_HOUR_KEY, (uint8_t) sun_set_hour),
     TupletInteger(WEATHER_SUN_SET_MIN_KEY, (uint8_t) sun_set_min),
-    TupletInteger(WEATHER_AUTO_DAYMODE_KEY, (uint8_t) auto_daymode)
+    TupletInteger(WEATHER_AUTO_DAYMODE_KEY, (uint8_t) auto_daymode),
+    TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, (uint8_t) update_interval),
+    TupletInteger(CAL_FIRST_DAY_KEY, (uint8_t) startday),
+    TupletInteger(CAL_OFFSET_KEY, (uint8_t) cal_offset)
   };
   
   // Initialize and trigger weather data Javascript call

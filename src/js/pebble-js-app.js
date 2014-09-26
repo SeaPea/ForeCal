@@ -1,6 +1,7 @@
-var DEBUG = true;
+var DEBUG = false;
 var lastSuccess;
-var daymode;
+var daymode = 0;
+var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 
 var cfgColorScheme = 'Auto';
 var cfgForecastHour = 18;
@@ -14,67 +15,85 @@ var cfgCalOffset = 0;
 
 function loadSettings() {
   
-  if (DEBUG) console.log('Loading settings');
+  if (DEBUG) console.log('Loading settings...');
   
-  if (localStorage.colorScheme)
+  if (localStorage.colorScheme !== undefined) {
     cfgColorScheme = localStorage.colorScheme;
-  
-  if (localStorage.forecastHour)
+  }
+  if (localStorage.forecastHour !== undefined) {
     cfgForecastHour = localStorage.forecastHour;
-  
-  if (localStorage.forecastMin)
+  }
+  if (localStorage.forecastMin !== undefined) {
     cfgForecastMin = localStorage.forecastMin;
-  
-  if (localStorage.useGPS)
+  }
+  if (localStorage.useGPS !== undefined) {
     cfgUseGPS = localStorage.useGPS;
-  
-  if (localStorage.weatherLoc)
+  }
+  if (localStorage.weatherLoc !== undefined) {
     cfgWeatherLoc = localStorage.weatherLoc;
-  
-  if (localStorage.tempUnit)
+  }
+  if (localStorage.tempUnit !== undefined) {
     cfgTempUnit = localStorage.tempUnit;
+  }
+  if (localStorage.updateInterval !== undefined) {
+    cfgUpdateInterval = parseInt(localStorage.updateInterval);
+  }
+  if (localStorage.firstDay !== undefined) {
+    cfgFirstDay = parseInt(localStorage.firstDay);
+  }
+  if (localStorage.calOffset !== undefined) {
+    cfgCalOffset = parseInt(localStorage.calOffset);
+  }
   
-  if (localStorage.updateInterval)
-    cfgUpdateInterval = localStorage.updateInterval;
+  if (DEBUG) {
+    console.log('Update Interval: ' + cfgUpdateInterval);
+    console.log('First Day: ' + cfgFirstDay);
+    console.log('Calendar Offset: ' + cfgCalOffset);
+    console.log('Color Scheme: ' + cfgColorScheme);
+  }
   
-  if (localStorage.firstDay)
-    cfgFirstDay = localStorage.firstDay;
-  
-  if (localStorage.calOffset)
-    cfgCalOffset = localStorage.calOffset;
 }
 
 function saveSettings(settings) {
   
   if (DEBUG) console.log('Saving settings');
   
+  var refreshW = false;
+  
   if (settings) {
-    if (settings.ColorScheme)
+    if (settings.ColorScheme !== undefined) {
+      if (settings.ColorScheme === 'Auto' && cfgColorScheme !== 'Auto') refreshW = true;
       cfgColorScheme = settings.ColorScheme;
-    
-    if (settings.ForecastHour)
+    }
+    if (settings.ForecastHour !== undefined) {
+      if (settings.ForecastHour !== cfgForecastHour) refreshW = true;
       cfgForecastHour = settings.ForecastHour;
-    
-    if (settings.ForecastMin)
+    }
+    if (settings.ForecastMin !== undefined) {
+      if (settings.ForecastMin !== cfgForecastMin) refreshW = true;
       cfgForecastMin = settings.ForecastMin;
-    
-    if (settings.UseGPS)
+    }
+    if (settings.UseGPS !== undefined) {
+      if (settings.UseGPS !== cfgUseGPS) refreshW = true;
       cfgUseGPS = settings.UseGPS;
-    
-    if (settings.WeatherLoc)
+    }
+    if (settings.WeatherLoc !== undefined) {
+      if (settings.WeatherLoc !== cfgWeatherLoc) refreshW = true;
       cfgWeatherLoc = settings.WeatherLoc;
-    
-    if (settings.TempUnit)
+    }
+    if (settings.TempUnit !== undefined) {
+      if (settings.TempUnit !== cfgTempUnit) refreshW = true;
       cfgTempUnit = settings.TempUnit;
-    
-    if (settings.UpdateInterval)
+    }
+    if (settings.UpdateInterval !== undefined) {
       cfgUpdateInterval = settings.UpdateInterval;
-    
-    if (settings.FirstDay)
+    }
+    if (settings.FirstDay !== undefined) {
       cfgFirstDay = settings.FirstDay;
-    
-    if (settings.CalOffset)
+    }
+    if (settings.CalOffset !== undefined) {
       cfgCalOffset = settings.CalOffset;
+    }
   }
     
   localStorage.colorScheme = cfgColorScheme;
@@ -87,16 +106,34 @@ function saveSettings(settings) {
   localStorage.firstDay = cfgFirstDay;
   localStorage.calOffset = cfgCalOffset;
   
-  if (DEBUG) console.log('Sending settings');
+  if (cfgColorScheme == 'WhiteOnBlack') {
+    daymode = 0;
+  } else if (cfgColorScheme == 'BlackOnWhite') {
+    daymode = 1;
+  }
   
-  // Send misc settings to the Pebble
-  Pebble.sendAppMessage({
-    "update_interval":cfgUpdateInterval,
-    "first_day":cfgFirstDay,
-    "cal_offset":cfgCalOffset,
-    "daymode":daymode,
-    "auto_daymode":(!cfgColorScheme || cfgColorScheme === '' || cfgColorScheme == 'Auto') ? 1 : 0
-  });
+  if (refreshW) {
+    if (DEBUG) console.log('Refreshing weather after changing settings');
+    refreshWeather();
+  } else {
+    if (DEBUG) {
+      console.log('Sending settings...');
+      console.log('Update Interval: ' + cfgUpdateInterval);
+      console.log('First Day: ' + cfgFirstDay);
+      console.log('Calendar Offset: ' + cfgCalOffset);
+      console.log('Daymode: ' + daymode);
+      console.log('Color Scheme: ' + cfgColorScheme);
+    }
+    
+    // Send misc settings to the Pebble
+    Pebble.sendAppMessage({
+      "update_interval":cfgUpdateInterval,
+      "first_day":cfgFirstDay,
+      "cal_offset":cfgCalOffset,
+      "daymode":daymode,
+      "auto_daymode":(!cfgColorScheme || cfgColorScheme === '' || cfgColorScheme == 'Auto') ? 1 : 0
+    });
+  }
     
 }
 
@@ -215,8 +252,35 @@ function addDays(date, days) {
     return result;
 }
 
+function locationSuccess(pos) {
+  // Got our Lat/Long so now fetch the weather data
+  var coordinates = pos.coords;
+  if (DEBUG) console.log("GPS location: " + coordinates.latitude + ", " + coordinates.longitude);
+  fetchWeather(coordinates.latitude + ',' + coordinates.longitude);
+}
+
+function locationError(err) {
+  console.warn('Location error (' + err.code + '): ' + err.message);
+  Pebble.sendAppMessage({
+    "city":"GPS N/A"
+  });
+}
+
+function refreshWeather() {
+  
+  lastSuccess = null;
+  
+  if (cfgUseGPS) {
+    // Trigger weather refresh by fetching location
+    window.navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
+  } else {
+    fetchWeather(cfgWeatherLoc);
+  }
+  
+}
+
 // Fetch the weather data from Yahoo and transmit to Pebble
-function fetchWeather(latitude, longitude) {
+function fetchWeather(loc) {
   
   if (DEBUG) console.log("### FETCHING WEATHER ###");
   
@@ -234,7 +298,7 @@ function fetchWeather(latitude, longitude) {
   var reqWeather = new XMLHttpRequest();
   // URL for getting our WOEID from our current Lat/Long position in JSON format
   reqLoc.open('GET', 'http://query.yahooapis.com/v1/public/yql?q=select%20*%20from%20geo.placefinder%20where%20text%3D%22' + 
-               latitude + '%2C' + longitude + '%22%20and%20gflags%3D%22R%22&format=json', true);
+               encodeURIComponent(loc) + '%22%20and%20gflags%3D%22R%22&format=json', true);
   
   reqLoc.onload = function(e) {
     if (reqLoc.readyState == 4) {
@@ -254,11 +318,16 @@ function fetchWeather(latitude, longitude) {
             console.log('WOEID: ' + woeid);
           }
           
-          // Determine temperature units from country code (US gets F, everyone else gets C)
-          if (country == 'US')
-            unit = 'F';
-          else
-            unit = 'C';
+          if (!cfgTempUnit || cfgTempUnit === '' || cfgTempUnit === 'Auto') {
+            // Determine temperature units from country code (US gets F, everyone else gets C)
+            if (country == 'US')
+              unit = 'F';
+            else
+              unit = 'C';
+          } else {
+            unit = cfgTempUnit;
+          }
+          
           
           if (DEBUG) console.log('Unit: ' + unit);
           
@@ -334,10 +403,9 @@ function fetchWeather(latitude, longitude) {
           auto_daymode = 0;
           daymode = (cfgColorScheme == 'WhiteOnBlack') ? 0 : 1;
         }
-          
         
-        if (curr_time.getHours() >= 18) {
-          // Between 6pm and Midnight, show tomorrow's forecast
+        if (cfgForecastHour !== 0 && (curr_time.getHours() > cfgForecastHour || (curr_time.getHours() == cfgForecastHour && curr_time.getMinutes() >= cfgForecastMin))) {
+          // Between set time and Midnight, show tomorrow's forecast
           forecast_day = 'Tomorrow';
           forecast_date = addDays(new Date(), 1);
         } else {
@@ -398,6 +466,9 @@ function fetchWeather(latitude, longitude) {
           console.log('Icon: ' + icon);
           console.log('Daymode: ' + daymode);
           console.log('Auto Daymode: ' + auto_daymode);
+          console.log('Update Interval: ' + cfgUpdateInterval);
+          console.log('First Day: ' + cfgFirstDay);
+          console.log('Calendar Offset: ' + cfgCalOffset);
         }
         
         lastSuccess = curr_time;
@@ -434,43 +505,25 @@ function fetchWeather(latitude, longitude) {
   reqLoc.send(null);
 }
 
-function locationSuccess(pos) {
-  // Got our Lat/Long so now fetch the weather data
-  var coordinates = pos.coords;
-  if (DEBUG) console.log("GPS location: " + coordinates.latitude + ", " + coordinates.longitude);
-  fetchWeather(coordinates.latitude, coordinates.longitude);
-}
-
-function locationError(err) {
-  console.warn('Location error (' + err.code + '): ' + err.message);
-  Pebble.sendAppMessage({
-    "city":"GPS N/A"
-  });
-}
-
-var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
-
-
 Pebble.addEventListener("ready",
                         function(e) {
                           if (DEBUG) console.log("JS Ready");
                           loadSettings();
                           // Trigger location and weather fetch on load
-                          locationWatcher = window.navigator.geolocation.watchPosition(locationSuccess, locationError, locationOptions);
+                          refreshWeather();
                         });
 
 Pebble.addEventListener("appmessage",
                         function(e) {
-                          // Trigger location and weather fetch on command from Pebble
-                          lastSuccess = null;
-                          window.navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
                           if (DEBUG) console.log("Pebble App Message!");
+                          // Trigger location and weather fetch on command from Pebble
+                          refreshWeather();
                         });
 
 Pebble.addEventListener("showConfiguration", 
                          function() {
-                           console.log("Showing Settings");
-                           var settingsURL = 'http://www.cpinkney.net/ForeCal/Settings-0_9.html?ColorScheme=' + cfgColorScheme + '&ForecastHour=' + cfgForecastHour +
+                           if (DEBUG) console.log("Showing Settings...");
+                           var settingsURL = 'http://www.cpinkney.net/ForeCal/Settings-1_0.html?ColorScheme=' + cfgColorScheme + '&ForecastHour=' + cfgForecastHour +
                                          '&ForecastMin=' + cfgForecastMin + '&UseGPS=' + cfgUseGPS + '&WeatherLoc=' + encodeURIComponent(cfgWeatherLoc) + '&TempUnit=' + cfgTempUnit +
                                          '&UpdateInterval=' + cfgUpdateInterval + '&FirstDay=' + cfgFirstDay + '&CalOffset=' + cfgCalOffset;
                            if (DEBUG) console.log("Settings URL: " + settingsURL);
