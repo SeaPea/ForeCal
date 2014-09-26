@@ -4,6 +4,8 @@ var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 
 var cfgColorScheme = 'Auto';
+var cfgShowBT = true;
+var cfgShowBatt = true;
 var cfgForecastHour = 18;
 var cfgForecastMin = 0;
 var cfgUseGPS = true;
@@ -20,6 +22,12 @@ function loadSettings() {
   if (localStorage.colorScheme !== undefined) {
     cfgColorScheme = localStorage.colorScheme;
   }
+  if (localStorage.showBT !== undefined) {
+    cfgShowBT = (localStorage.showBT == 'true');
+  }
+  if (localStorage.showBatt !== undefined) {
+    cfgShowBatt = (localStorage.showBatt == 'true');
+  }
   if (localStorage.forecastHour !== undefined) {
     cfgForecastHour = localStorage.forecastHour;
   }
@@ -27,7 +35,7 @@ function loadSettings() {
     cfgForecastMin = localStorage.forecastMin;
   }
   if (localStorage.useGPS !== undefined) {
-    cfgUseGPS = localStorage.useGPS;
+    cfgUseGPS = (localStorage.useGPS == 'true');
   }
   if (localStorage.weatherLoc !== undefined) {
     cfgWeatherLoc = localStorage.weatherLoc;
@@ -50,6 +58,8 @@ function loadSettings() {
     console.log('First Day: ' + cfgFirstDay);
     console.log('Calendar Offset: ' + cfgCalOffset);
     console.log('Color Scheme: ' + cfgColorScheme);
+    console.log('Show BT: ' + cfgShowBT);
+    console.log('Show Battery: ' + cfgShowBatt);
   }
   
 }
@@ -64,6 +74,12 @@ function saveSettings(settings) {
     if (settings.ColorScheme !== undefined) {
       if (settings.ColorScheme === 'Auto' && cfgColorScheme !== 'Auto') refreshW = true;
       cfgColorScheme = settings.ColorScheme;
+    }
+    if (settings.ShowBT !== undefined) {
+      cfgShowBT = settings.ShowBT;
+    }
+    if (settings.ShowBatt !== undefined) {
+      cfgShowBatt = settings.ShowBatt;
     }
     if (settings.ForecastHour !== undefined) {
       if (settings.ForecastHour !== cfgForecastHour) refreshW = true;
@@ -97,6 +113,8 @@ function saveSettings(settings) {
   }
     
   localStorage.colorScheme = cfgColorScheme;
+  localStorage.showBT = cfgShowBT;
+  localStorage.showBatt = cfgShowBatt;
   localStorage.forecastHour = cfgForecastHour;
   localStorage.forecastMin = cfgForecastMin;
   localStorage.useGPS = cfgUseGPS;
@@ -123,6 +141,8 @@ function saveSettings(settings) {
       console.log('Calendar Offset: ' + cfgCalOffset);
       console.log('Daymode: ' + daymode);
       console.log('Color Scheme: ' + cfgColorScheme);
+      console.log('Show BT: ' + cfgShowBT);
+      console.log('Show Battery: ' + cfgShowBatt);
     }
     
     // Send misc settings to the Pebble
@@ -131,7 +151,9 @@ function saveSettings(settings) {
       "first_day":cfgFirstDay,
       "cal_offset":cfgCalOffset,
       "daymode":daymode,
-      "auto_daymode":(!cfgColorScheme || cfgColorScheme === '' || cfgColorScheme == 'Auto') ? 1 : 0
+      "auto_daymode":(!cfgColorScheme || cfgColorScheme === '' || cfgColorScheme == 'Auto') ? 1 : 0,
+      "show_bt":(cfgShowBT === true) ? 1 : 0,
+      "show_batt":(cfgShowBatt === true) ? 1 : 0
     });
   }
     
@@ -469,6 +491,8 @@ function fetchWeather(loc) {
           console.log('Update Interval: ' + cfgUpdateInterval);
           console.log('First Day: ' + cfgFirstDay);
           console.log('Calendar Offset: ' + cfgCalOffset);
+          console.log('Show BT: ' + ((cfgShowBT === true) ? 1 : 0));
+          console.log('Show Battery: ' + ((cfgShowBatt === true) ? 1 : 0));
         }
         
         lastSuccess = curr_time;
@@ -491,7 +515,9 @@ function fetchWeather(loc) {
             "auto_daymode":auto_daymode,
             "update_interval":cfgUpdateInterval,
             "first_day":cfgFirstDay,
-            "cal_offset":cfgCalOffset});
+            "cal_offset":cfgCalOffset,
+            "show_bt":((cfgShowBT === true) ? 1 : 0),
+            "show_batt":((cfgShowBatt === true) ? 1 : 0)});
       } else {
         console.warn("Error: " + reqWeather.status);
         
@@ -509,7 +535,7 @@ Pebble.addEventListener("ready",
                         function(e) {
                           if (DEBUG) console.log("JS Ready");
                           loadSettings();
-                          // Trigger location and weather fetch on load
+                          // Trigger weather fetch on load
                           refreshWeather();
                         });
 
@@ -525,7 +551,8 @@ Pebble.addEventListener("showConfiguration",
                            if (DEBUG) console.log("Showing Settings...");
                            var settingsURL = 'http://www.cpinkney.net/ForeCal/Settings-1_0.html?ColorScheme=' + cfgColorScheme + '&ForecastHour=' + cfgForecastHour +
                                          '&ForecastMin=' + cfgForecastMin + '&UseGPS=' + cfgUseGPS + '&WeatherLoc=' + encodeURIComponent(cfgWeatherLoc) + '&TempUnit=' + cfgTempUnit +
-                                         '&UpdateInterval=' + cfgUpdateInterval + '&FirstDay=' + cfgFirstDay + '&CalOffset=' + cfgCalOffset;
+                                         '&UpdateInterval=' + cfgUpdateInterval + '&FirstDay=' + cfgFirstDay + '&CalOffset=' + cfgCalOffset +
+                                         '&ShowBT=' + cfgShowBT + '&ShowBatt=' + cfgShowBatt;
                            if (DEBUG) console.log("Settings URL: " + settingsURL);
                            Pebble.openURL(settingsURL);
                           });

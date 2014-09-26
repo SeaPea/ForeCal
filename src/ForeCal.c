@@ -46,6 +46,8 @@ static InverterLayer *daymode_layer = NULL;
 
 static const uint32_t bt_warn_pattern[] = { 1000, 500, 1000 };
 static int update_interval = 20;
+static int show_bt = 1;
+static int show_batt = 1;
 static int cal_offset = 0;
 static int startday = 0;
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
@@ -74,7 +76,7 @@ static int auto_daymode = 99;
 static int prev_daytime = 99;
 
 // App Message Keys for Tuples transferred from Javascript
-enum WeatherKey {
+enum MessageKey {
   WEATHER_STATUS_KEY = 0,
   WEATHER_CURR_TEMP_KEY = 1,
   WEATHER_SUN_RISE_SET_KEY = 2,
@@ -92,7 +94,9 @@ enum WeatherKey {
   WEATHER_AUTO_DAYMODE_KEY = 14,
   WEATHER_UPDATE_INTERVAL_KEY = 15,
   CAL_FIRST_DAY_KEY = 16,
-  CAL_OFFSET_KEY = 17
+  CAL_OFFSET_KEY = 17,
+  SHOW_BT_KEY = 18,
+  SHOW_BATT_KEY = 19
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -161,6 +165,8 @@ static void handle_status_timer(void *data) {
     persist_write_int(WEATHER_UPDATE_INTERVAL_KEY, update_interval);
     persist_write_int(CAL_FIRST_DAY_KEY, startday);
     persist_write_int(CAL_OFFSET_KEY, cal_offset);
+    persist_write_int(SHOW_BT_KEY, show_bt);
+    persist_write_int(SHOW_BATT_KEY, show_batt);
   }
 }
 
@@ -338,6 +344,20 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
 #endif
       layer_mark_dirty(cal_layer);
       break;
+    case SHOW_BT_KEY:
+      show_bt = new_tuple->value->uint8;
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Show BT: %d", show_bt);
+#endif
+      layer_set_hidden(bitmap_layer_get_layer(bt_layer), (show_bt == 0));
+      break;
+    case SHOW_BATT_KEY:
+      show_batt = new_tuple->value->uint8;
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Show Battery: %d", show_batt);
+#endif
+      layer_set_hidden(bitmap_layer_get_layer(batt_layer), (show_batt == 0));
+      break;
   }
 }
 
@@ -406,13 +426,13 @@ static void update_bt_icon(bool connected) {
 #ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Connected");
 #endif
-    layer_set_hidden(bitmap_layer_get_layer(bt_layer), false);
+    layer_set_hidden(bitmap_layer_get_layer(bt_layer), false && (show_bt == 1));
   }
   else {
 #ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
 #endif
-    layer_set_hidden(bitmap_layer_get_layer(bt_layer), true);
+    layer_set_hidden(bitmap_layer_get_layer(bt_layer), true || (show_bt == 0));
     
     VibePattern pat = {
       .durations = bt_warn_pattern,
@@ -586,14 +606,22 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
   
+  if (persist_exists(SHOW_BT_KEY))
+    show_bt = persist_read_int(SHOW_BT_KEY);
+  
+  if (persist_exists(SHOW_BATT_KEY))
+    show_batt = persist_read_int(SHOW_BATT_KEY);
+  
   bt_layer = bitmap_layer_create(GRect(129, 1, 9, 16));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
   bitmap_layer_set_bitmap(bt_layer, bt_icon);
+  layer_set_hidden(bitmap_layer_get_layer(bt_layer), (show_bt == 0));
   update_bt_icon(bluetooth_connection_service_peek());
   
   batt_layer = bitmap_layer_create(GRect(126, 18, 16, 8));
   layer_add_child(current_layer, bitmap_layer_get_layer(batt_layer));
   BatteryChargeState batt_state = battery_state_service_peek();
+  layer_set_hidden(bitmap_layer_get_layer(batt_layer), (show_batt == 0));
   handle_batt_update(batt_state);
   battery_state_service_subscribe(handle_batt_update);
   
@@ -700,8 +728,11 @@ static void window_load(Window *window) {
   
   layer_set_update_proc(cal_layer, cal_layer_draw);
   
+  if (persist_exists(WEATHER_DAYMODE_KEY))
+    daymode = persist_read_int(WEATHER_DAYMODE_KEY);
+  
   daymode_layer = inverter_layer_create(GRect(0, 0, 144, 168));
-  layer_set_hidden(inverter_layer_get_layer(daymode_layer), true);
+  layer_set_hidden(inverter_layer_get_layer(daymode_layer), (daymode == 0));
   layer_add_child(window_layer, inverter_layer_get_layer(daymode_layer));
   
   // Get current time
@@ -746,9 +777,6 @@ static void window_load(Window *window) {
   if (persist_exists(WEATHER_CONDITION_KEY))
     persist_read_string(WEATHER_CONDITION_KEY, condition, sizeof(condition));
   
-  if (persist_exists(WEATHER_DAYMODE_KEY))
-    daymode = persist_read_int(WEATHER_DAYMODE_KEY);
-  
   if (persist_exists(WEATHER_SUN_RISE_HOUR_KEY))
     sun_rise_hour = persist_read_int(WEATHER_SUN_RISE_HOUR_KEY);
   
@@ -786,7 +814,9 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_AUTO_DAYMODE_KEY, (uint8_t) auto_daymode),
     TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, (uint8_t) update_interval),
     TupletInteger(CAL_FIRST_DAY_KEY, (uint8_t) startday),
-    TupletInteger(CAL_OFFSET_KEY, (uint8_t) cal_offset)
+    TupletInteger(CAL_OFFSET_KEY, (uint8_t) cal_offset),
+    TupletInteger(SHOW_BT_KEY, (uint8_t) show_bt),
+    TupletInteger(SHOW_BATT_KEY, (uint8_t) show_batt)
   };
   
   // Initialize and trigger weather data Javascript call

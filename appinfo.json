@@ -11,6 +11,8 @@
         "high_temp": 4,
         "icon": 6,
         "low_temp": 5,
+        "show_batt": 19,
+        "show_bt": 18,
         "status": 0,
         "sun_rise_hour": 10,
         "sun_rise_min": 11,
