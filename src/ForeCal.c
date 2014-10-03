@@ -61,7 +61,7 @@ static char current_date[] = "Sun Jan 01";
 static char status[50] = "Fetching...";
 static char city[50] = "";
 static char curr_temp[10] = "";
-static char sun_rise_set[6] = "";
+static char sun_rise_set[7] = "";
 static char forecast_day[9] = "";
 static char high_temp[10] = "";
 static char low_temp[10] = "";
@@ -96,7 +96,8 @@ enum MessageKey {
   CAL_FIRST_DAY_KEY = 16,
   CAL_OFFSET_KEY = 17,
   SHOW_BT_KEY = 18,
-  SHOW_BATT_KEY = 19
+  SHOW_BATT_KEY = 19,
+  TIME_24HR_KEY = 20
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -216,16 +217,32 @@ static void update_sun_layer(struct tm *t) {
       
       if (t->tm_hour < sun_rise_hour || (t->tm_hour == sun_rise_hour && t->tm_min <= sun_rise_min) ||
           t->tm_hour > sun_set_hour || (t->tm_hour == sun_set_hour && t->tm_min >= sun_set_min)) {
+        
         // Night
-        snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_rise_hour, sun_rise_min);
+        if (clock_is_24h_style())
+          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_rise_hour, sun_rise_min);
+        else 
+          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d%s", (((sun_rise_hour + 11) % 12) + 1), sun_rise_min, (sun_rise_hour >= 12 ? "P" : "a"));
+        
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
         prev_daytime = 0;
+        
       } else {
+        
         // Day
-        snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_set_hour, sun_set_min);
+        if (clock_is_24h_style())
+          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_set_hour, sun_set_min);
+        else
+          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d%s", (((sun_set_hour + 11) % 12) + 1), sun_set_min, (sun_set_hour >= 12 ? "P" : "a"));
+          
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
         prev_daytime = 1;
+        
       }
+      
+#ifdef DEBUG
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", sun_rise_set);
+#endif
       
       if (auto_daymode == 1) 
         layer_set_hidden(inverter_layer_get_layer(daymode_layer), !daytime);
@@ -366,6 +383,23 @@ static void update_weather(void) {
   text_layer_set_text(status_layer, "Fetching...");
   
   Tuplet value = TupletCString(WEATHER_CITY_KEY, "Fetching...");
+
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+
+  if (iter == NULL) {
+    return;
+  }
+
+  dict_write_tuplet(iter, &value);
+  dict_write_end(iter);
+
+  app_message_outbox_send();
+}
+
+// Procedure that sends the Pebble 12/24hr setting to the Phone and initializes the first weather call
+static void init_weather(void) {  
+  Tuplet value = TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0);
 
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
@@ -690,7 +724,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(low_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(low_temp_layer));
   
-  sun_rise_set_layer = text_layer_create(GRect(109, 26, 36, 18));
+  sun_rise_set_layer = text_layer_create(GRect(101, 26, 47, 18));
   text_layer_set_text_color(sun_rise_set_layer, GColorWhite);
   text_layer_set_background_color(sun_rise_set_layer, GColorClear);
   text_layer_set_font(sun_rise_set_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
@@ -701,7 +735,7 @@ static void window_load(Window *window) {
   icon_layer = bitmap_layer_create(GRect(66, 16, 32, 32));
   layer_add_child(forecast_layer, bitmap_layer_get_layer(icon_layer));
   
-  sun_layer = bitmap_layer_create(GRect(117, 17, 20, 14));
+  sun_layer = bitmap_layer_create(GRect(115, 17, 20, 14));
   layer_add_child(forecast_layer, bitmap_layer_get_layer(sun_layer));
   
   condition_layer = text_layer_create(GRect(0, 43, 144, 24));
@@ -816,12 +850,16 @@ static void window_load(Window *window) {
     TupletInteger(CAL_FIRST_DAY_KEY, (uint8_t) startday),
     TupletInteger(CAL_OFFSET_KEY, (uint8_t) cal_offset),
     TupletInteger(SHOW_BT_KEY, (uint8_t) show_bt),
-    TupletInteger(SHOW_BATT_KEY, (uint8_t) show_batt)
+    TupletInteger(SHOW_BATT_KEY, (uint8_t) show_batt),
+    TupletInteger(TIME_24HR_KEY, (uint8_t) clock_is_24h_style() ? 1 : 0)
   };
   
-  // Initialize and trigger weather data Javascript call
+  // Initialize comms with phone
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
       sync_tuple_changed_callback, sync_error_callback, NULL);
+  
+  // Trigger first weather update (also sends 12/24hr setting to phone)
+  init_weather();
   
   // Fire timer half a second after the app_sync_init to mark everything as loaded once the initial tuple callback is done
   weatherinit_timer = app_timer_register(500, handle_weatherinit_timer, NULL);

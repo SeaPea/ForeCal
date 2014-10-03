@@ -3,6 +3,7 @@ var lastSuccess;
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 
+var cfgTime24hr = true;
 var cfgColorScheme = 'Auto';
 var cfgShowBT = true;
 var cfgShowBatt = true;
@@ -19,6 +20,9 @@ function loadSettings() {
   
   if (DEBUG) console.log('Loading settings...');
   
+  if (localStorage.time24hr !== undefined) {
+    cfgTime24hr = (localStorage.time24hr == 'true');
+  }
   if (localStorage.colorScheme !== undefined) {
     cfgColorScheme = localStorage.colorScheme;
   }
@@ -473,8 +477,14 @@ function fetchWeather(loc) {
         }
         
         // Set the status display on the Pebble to the time of the weather update
-        status = 'Upd: ' + curr_time.getHours() + ':' + 
-          (curr_time.getMinutes() < 10 ? '0' : '') + curr_time.getMinutes();
+        if (cfgTime24hr) {
+          status = 'Upd: ' + curr_time.getHours() + ':' + 
+            (curr_time.getMinutes() < 10 ? '0' : '') + curr_time.getMinutes();
+        } else {
+          status = 'Upd: ' + (((curr_time.getHours() + 11) % 12) + 1) + ':' + 
+            (curr_time.getMinutes() < 10 ? '0' : '') + curr_time.getMinutes() +
+            (curr_time.getHours() >= 12 ? 'PM' : 'AM');
+        }
         
         if (DEBUG) {
           console.log('Current Temp: ' + curr_temp);
@@ -535,13 +545,21 @@ Pebble.addEventListener("ready",
                         function(e) {
                           if (DEBUG) console.log("JS Ready");
                           loadSettings();
-                          // Trigger weather fetch on load
-                          refreshWeather();
                         });
 
 Pebble.addEventListener("appmessage",
                         function(e) {
                           if (DEBUG) console.log("Pebble App Message!");
+                          // Store 12/24hr setting passed from Pebble
+                          if (e.payload !== undefined && e.payload.time_24hr !== undefined) {
+                            cfgTime24hr = (e.payload.time_24hr == 1);
+                            localStorage.time24hr = cfgTime24hr;
+                            if (DEBUG) {
+                              console.log('Payload Time 24hr: ' + e.payload.time_24hr);
+                              console.log('Cfg Time 24hr: ' + cfgTime24hr);
+                            }
+                          }
+                          
                           // Trigger location and weather fetch on command from Pebble
                           refreshWeather();
                         });

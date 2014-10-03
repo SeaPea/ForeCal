@@ -19,6 +19,7 @@
         "sun_rise_set": 2,
         "sun_set_hour": 12,
         "sun_set_min": 13,
+        "time_24hr": 20,
         "update_interval": 15
     },
     "capabilities": [
@@ -170,7 +171,7 @@
     "shortName": "ForeCal",
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
     "versionCode": 2,
-    "versionLabel": "1.0",
+    "versionLabel": "1.1",
     "watchapp": {
         "watchface": true
     }
