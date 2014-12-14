@@ -10,6 +10,7 @@
         "forecast_day": 3,
         "high_temp": 4,
         "icon": 6,
+        "loc_changed": 21,
         "low_temp": 5,
         "show_batt": 19,
         "show_bt": 18,
@@ -171,7 +172,7 @@
     "shortName": "ForeCal",
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
     "versionCode": 2,
-    "versionLabel": "1.1",
+    "versionLabel": "1.3",
     "watchapp": {
         "watchface": true
     }

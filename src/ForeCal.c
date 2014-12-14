@@ -1,6 +1,10 @@
 #include "pebble.h"
 
 //#define DEBUG
+#ifndef DEBUG
+#undef APP_LOG
+#define APP_LOG(...)
+#endif
   
 #define MyTupletCString(_key, _cstring) \
 ((const Tuplet) { .type = TUPLE_CSTRING, .key = _key, .cstring = { .data = _cstring, .length = strlen(_cstring) + 1 }})
@@ -52,6 +56,8 @@ static int cal_offset = 0;
 static int startday = 0;
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
+static const int inbound_size = 256;
+static const int outbound_size = 256;
 static AppSync sync;
 static uint8_t sync_buffer[512];
 
@@ -74,6 +80,9 @@ static int sun_set_hour = 99;
 static int sun_set_min = 99;
 static int auto_daymode = 99;
 static int prev_daytime = 99;
+static bool force_sun_update = false;
+static int sun_update_count = 0;
+static bool last_error = false;
 
 // App Message Keys for Tuples transferred from Javascript
 enum MessageKey {
@@ -97,7 +106,8 @@ enum MessageKey {
   CAL_OFFSET_KEY = 17,
   SHOW_BT_KEY = 18,
   SHOW_BATT_KEY = 19,
-  TIME_24HR_KEY = 20
+  TIME_24HR_KEY = 20,
+  LOC_CHANGED_KEY = 21
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -173,21 +183,36 @@ static void handle_status_timer(void *data) {
 
 // Timer event that fires after the initial tuple callback below
 static void handle_weatherinit_timer(void *data) {
-#ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather init timer event fired");
-#endif
   loading = false;
   weatherinit_timer = NULL;
 }
 
-// App message communication error from Javascript
+// App message communication error
 static void sync_error_callback(DictionaryResult dict_error, AppMessageResult app_message_error, void *context) {
   APP_LOG(APP_LOG_LEVEL_ERROR, "App Message Sync Error: %d", app_message_error);
-  text_layer_set_text(status_layer, "Comm error");
+  last_error = true;
+  if (dict_error == DICT_OK) {
+    switch (app_message_error) {
+      case APP_MSG_NOT_CONNECTED:
+        if (bluetooth_connection_service_peek())
+          strcpy(status, "Run phone app");
+        else
+          strcpy(status, "BT not conn.");
+        break;
+      default:
+        snprintf(status, sizeof(status), "Comm error:%d", app_message_error);
+    }
+    
+  } else {
+    snprintf(status, sizeof(status), "Data error:%d", dict_error);
+  }
+  
+  text_layer_set_text(status_layer, status);
 }
 
 static void update_sun_layer(struct tm *t) {
-  if (sun_rise_hour != 99 && sun_rise_hour != 99 && sun_set_hour != 99 && sun_set_min != 99) {
+  if (sun_rise_hour != 99 && sun_rise_min != 99 && sun_set_hour != 99 && sun_set_min != 99) {
     
     if (t == NULL) {
       // Get current time
@@ -196,38 +221,19 @@ static void update_sun_layer(struct tm *t) {
       t = localtime(&temp);
     }
     
-#ifdef DEBUG
-      //APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Rise Hour: %d, Sun Rise Minute: %d", sun_rise_hour, sun_rise_min);
-      //APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun Set Hour: %d, Sun Set Minute: %d", sun_set_hour, sun_set_min);
-#endif
-    
     bool daytime = true;
     
     if (t->tm_hour < sun_rise_hour || (t->tm_hour == sun_rise_hour && t->tm_min <= sun_rise_min) ||
         t->tm_hour > sun_set_hour || (t->tm_hour == sun_set_hour && t->tm_min >= sun_set_min))
       daytime = false;
     
-    if ((daytime && prev_daytime != 1) || (!daytime && prev_daytime != 0)) {
-#ifdef DEBUG
+    if ((force_sun_update && sun_update_count >= 4) || (daytime && prev_daytime != 1) || (!daytime && prev_daytime != 0)) {
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Updating sun layer");
-#endif
       
       if (sun_bitmap)
           gbitmap_destroy(sun_bitmap);
       
-      if (t->tm_hour < sun_rise_hour || (t->tm_hour == sun_rise_hour && t->tm_min <= sun_rise_min) ||
-          t->tm_hour > sun_set_hour || (t->tm_hour == sun_set_hour && t->tm_min >= sun_set_min)) {
-        
-        // Night
-        if (clock_is_24h_style())
-          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_rise_hour, sun_rise_min);
-        else 
-          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d%s", (((sun_rise_hour + 11) % 12) + 1), sun_rise_min, (sun_rise_hour >= 12 ? "P" : "a"));
-        
-        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
-        prev_daytime = 0;
-        
-      } else {
+      if (daytime) {
         
         // Day
         if (clock_is_24h_style())
@@ -238,11 +244,20 @@ static void update_sun_layer(struct tm *t) {
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
         prev_daytime = 1;
         
+      } else {
+        
+        // Night
+        if (clock_is_24h_style())
+          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_rise_hour, sun_rise_min);
+        else 
+          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d%s", (((sun_rise_hour + 11) % 12) + 1), sun_rise_min, (sun_rise_hour >= 12 ? "P" : "a"));
+        
+        sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
+        prev_daytime = 0;
+        
       }
-      
-#ifdef DEBUG
+
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", sun_rise_set);
-#endif
       
       if (auto_daymode == 1) 
         layer_set_hidden(inverter_layer_get_layer(daymode_layer), !daytime);
@@ -250,6 +265,12 @@ static void update_sun_layer(struct tm *t) {
       bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
       text_layer_set_text(sun_rise_set_layer, sun_rise_set);
       layer_set_hidden(bitmap_layer_get_layer(sun_layer), false);
+      
+      force_sun_update = false;
+      sun_update_count = 0;
+    } else if (!force_sun_update && sun_update_count >= 4) {
+      // Reset update count if not forcing update or not due for update
+      sun_update_count = 0;
     }
   } else {
     text_layer_set_text(sun_rise_set_layer, "");
@@ -288,16 +309,8 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
     case WEATHER_CURR_TEMP_KEY:
       strncpy(curr_temp, new_tuple->value->cstring, sizeof(curr_temp));
       text_layer_set_text(curr_temp_layer, curr_temp); 
-#ifdef DEBUG
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Displaying Current Temp: %s", curr_temp);
-#endif
       break;
-    /*case WEATHER_SUN_RISE_SET_KEY:
-      // Show the sunrise or sunset time (only the next sunrise/sunset is shown)
-      strncpy(sun_rise_set, new_tuple->value->cstring, sizeof(sun_rise_set));
-      text_layer_set_text(sun_rise_set_layer, sun_rise_set);
-      layer_set_hidden(bitmap_layer_get_layer(sun_layer), (strlen(sun_rise_set) == 0));
-      break;*/
     case WEATHER_FORECAST_DAY_KEY:
       strncpy(forecast_day, new_tuple->value->cstring, sizeof(forecast_day));
       text_layer_set_text(forecast_day_layer, forecast_day);
@@ -323,18 +336,22 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_SUN_RISE_HOUR_KEY:
       sun_rise_hour = new_tuple->value->uint8;
+      sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_RISE_MIN_KEY:
       sun_rise_min = new_tuple->value->uint8;
+      sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_SET_HOUR_KEY:
       sun_set_hour = new_tuple->value->uint8;
+      sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_SET_MIN_KEY:
       sun_set_min = new_tuple->value->uint8;
+      sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_AUTO_DAYMODE_KEY:
@@ -343,75 +360,57 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_UPDATE_INTERVAL_KEY:
       update_interval = new_tuple->value->uint8;
-#ifdef DEBUG
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Update Interval: %d", update_interval);
-#endif
       break;
     case CAL_FIRST_DAY_KEY:
       startday = new_tuple->value->uint8;
-#ifdef DEBUG
       APP_LOG(APP_LOG_LEVEL_DEBUG, "First Day: %d", startday);
-#endif
       layer_mark_dirty(cal_layer);
       break;
     case CAL_OFFSET_KEY:
       cal_offset = new_tuple->value->uint8;
-#ifdef DEBUG
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Calendar Offset: %d", cal_offset);
-#endif
       layer_mark_dirty(cal_layer);
       break;
     case SHOW_BT_KEY:
       show_bt = new_tuple->value->uint8;
-#ifdef DEBUG
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Show BT: %d", show_bt);
-#endif
-      layer_set_hidden(bitmap_layer_get_layer(bt_layer), (show_bt == 0));
+      layer_set_hidden(bitmap_layer_get_layer(bt_layer), !bluetooth_connection_service_peek() || (show_bt == 0));
       break;
     case SHOW_BATT_KEY:
       show_batt = new_tuple->value->uint8;
-#ifdef DEBUG
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Show Battery: %d", show_batt);
-#endif
       layer_set_hidden(bitmap_layer_get_layer(batt_layer), (show_batt == 0));
+      break;
+    case LOC_CHANGED_KEY:
+      if (!loading && (int)new_tuple->value->uint8 == 1) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Forcing sun layer update");
+        force_sun_update = true;
+        update_sun_layer(NULL);
+      }
       break;
   }
 }
 
 // Procedure that triggers the weather data to update via Javascript
 static void update_weather(void) {
+  last_error = false;
   text_layer_set_text(status_layer, "Fetching...");
   
-  Tuplet value = TupletCString(WEATHER_CITY_KEY, "Fetching...");
-
-  DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
-
-  if (iter == NULL) {
-    return;
-  }
-
-  dict_write_tuplet(iter, &value);
-  dict_write_end(iter);
-
-  app_message_outbox_send();
+  Tuplet values[] = {
+    TupletCString(WEATHER_CITY_KEY, "Fetching...")
+  };
+  
+  app_sync_set(&sync, values, 1);
 }
 
 // Procedure that sends the Pebble 12/24hr setting to the Phone and initializes the first weather call
 static void init_weather(void) {  
-  Tuplet value = TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0);
-
-  DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
-
-  if (iter == NULL) {
-    return;
-  }
-
-  dict_write_tuplet(iter, &value);
-  dict_write_end(iter);
-
-  app_message_outbox_send();
+  Tuplet values[] = {
+    TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0)
+  };
+  
+  app_sync_set(&sync, values, 1);
 }
 
 // Handle clock change events
@@ -419,18 +418,14 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   if ((units_changed & MINUTE_UNIT) != 0) {
     clock_copy_time_string(current_time, sizeof(current_time));
     text_layer_set_text(clock_layer, current_time);
-#ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
-#endif
     if ((update_interval == 0 && tick_time->tm_min == 0) || tick_time->tm_min % update_interval == 0) {
       update_weather(); // Update the weather every X minutes
     }
     update_sun_layer(tick_time);
   }
   if ((units_changed & HOUR_UNIT) != 0) {
-#ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Hour changed");
-#endif
     if (clock_is_24h_style()) {
       text_layer_set_text(pm_layer, "");
     }
@@ -444,9 +439,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     }
   }
   if ((units_changed & DAY_UNIT) != 0) {
-#ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Day changed");
-#endif
     strftime(current_date, sizeof(current_date), "%a %b %d", tick_time);
     text_layer_set_text(date_layer, current_date);
     // Trigger redraw of calendar
@@ -454,19 +447,20 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   }
 }
 
+// Try updating the weather again after a delay when BT reconnects to give everything time to reopen
+static void handle_reconnect_delay(void *data) {
+  update_weather();
+}
+
 // Show or hide Bluetooth icon based on connection status and vibrate on disconnect
 static void update_bt_icon(bool connected) {
   if (connected) {
-#ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Connected");
-#endif
-    layer_set_hidden(bitmap_layer_get_layer(bt_layer), false && (show_bt == 1));
+    layer_set_hidden(bitmap_layer_get_layer(bt_layer), false || (show_bt == 0));
   }
   else {
-#ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
-#endif
-    layer_set_hidden(bitmap_layer_get_layer(bt_layer), true || (show_bt == 0));
+    layer_set_hidden(bitmap_layer_get_layer(bt_layer), true);
     
     VibePattern pat = {
       .durations = bt_warn_pattern,
@@ -478,9 +472,7 @@ static void update_bt_icon(bool connected) {
 
 // Handle Bluetooth disconnect timer to show disconnect after 15 seconds
 static void handle_bt_timeout(void *data) {
-#ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Update - 15sec");
-#endif
   bt_timer = NULL;
   update_bt_icon(bluetooth_connection_service_peek());
 }
@@ -493,6 +485,9 @@ static void handle_bt_update(bool connected) {
       app_timer_cancel(bt_timer);
     
     update_bt_icon(connected);
+    
+    // If reconnected after last weather update failed, try updating the weather again in 5 seconds
+    if (!loading && last_error) app_timer_register(5000, handle_reconnect_delay, NULL);
   }
   else {
     // If disconnected, wait 15 seconds to update BT icon in case of reconnect
@@ -563,12 +558,6 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, GRect(0, 11, 144, 11), 0, GCornerNone);
   graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
-  
-  // Draw day separators
-  /*graphics_context_set_stroke_color(ctx, GColorWhite);
-  for (int c = 1; c < 7; c++) {
-    graphics_draw_line(ctx, GPoint((c*20) + c - 1, 11), GPoint((c*20) + c - 1, 46));
-  }*/
   
   // Get current time
   struct tm *t;
@@ -649,7 +638,6 @@ static void window_load(Window *window) {
   bt_layer = bitmap_layer_create(GRect(129, 1, 9, 16));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
   bitmap_layer_set_bitmap(bt_layer, bt_icon);
-  layer_set_hidden(bitmap_layer_get_layer(bt_layer), (show_bt == 0));
   update_bt_icon(bluetooth_connection_service_peek());
   
   batt_layer = bitmap_layer_create(GRect(126, 18, 16, 8));
@@ -784,17 +772,10 @@ static void window_load(Window *window) {
   
   if (persist_exists(WEATHER_CURR_TEMP_KEY)) {
     persist_read_string(WEATHER_CURR_TEMP_KEY, curr_temp, sizeof(curr_temp));
-#ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Stored Current Temp: %s", curr_temp);
-#endif
   } else {
-#ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current temp not stored");
-#endif
   }
-  
-  /*if (persist_exists(WEATHER_SUN_RISE_SET_KEY))
-    persist_read_string(WEATHER_SUN_RISE_SET_KEY, sun_rise_set, sizeof(sun_rise_set));*/
   
   if (persist_exists(WEATHER_FORECAST_DAY_KEY))
     persist_read_string(WEATHER_FORECAST_DAY_KEY, forecast_day, sizeof(forecast_day));
@@ -833,7 +814,6 @@ static void window_load(Window *window) {
   Tuplet initial_values[] = {
     MyTupletCString(WEATHER_STATUS_KEY, status),
     MyTupletCString(WEATHER_CURR_TEMP_KEY, curr_temp),
-    //MyTupletCString(WEATHER_SUN_RISE_SET_KEY, sun_rise_set),
     MyTupletCString(WEATHER_FORECAST_DAY_KEY, forecast_day),
     MyTupletCString(WEATHER_HIGH_TEMP_KEY, high_temp),
     MyTupletCString(WEATHER_LOW_TEMP_KEY, low_temp),
@@ -851,7 +831,8 @@ static void window_load(Window *window) {
     TupletInteger(CAL_OFFSET_KEY, (uint8_t) cal_offset),
     TupletInteger(SHOW_BT_KEY, (uint8_t) show_bt),
     TupletInteger(SHOW_BATT_KEY, (uint8_t) show_batt),
-    TupletInteger(TIME_24HR_KEY, (uint8_t) clock_is_24h_style() ? 1 : 0)
+    TupletInteger(TIME_24HR_KEY, (uint8_t) clock_is_24h_style() ? 1 : 0),
+    TupletInteger(LOC_CHANGED_KEY, (uint8_t) 0)
   };
   
   // Initialize comms with phone
@@ -861,8 +842,8 @@ static void window_load(Window *window) {
   // Trigger first weather update (also sends 12/24hr setting to phone)
   init_weather();
   
-  // Fire timer half a second after the app_sync_init to mark everything as loaded once the initial tuple callback is done
-  weatherinit_timer = app_timer_register(500, handle_weatherinit_timer, NULL);
+  // Fire timer 2 seconds after the app_sync_init to mark everything as loaded once the initial tuple callback is done
+  weatherinit_timer = app_timer_register(2000, handle_weatherinit_timer, NULL);
 }
 
 static void window_unload(Window *window) {
@@ -931,8 +912,6 @@ static void init(void) {
   bt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BT);
   bluetooth_connection_service_subscribe(handle_bt_update);
   
-  const int inbound_size = 256;
-  const int outbound_size = 256;
   app_message_open(inbound_size, outbound_size);
 
   const bool animated = true;

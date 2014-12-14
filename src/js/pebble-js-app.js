@@ -2,6 +2,8 @@ var DEBUG = false;
 var lastSuccess;
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
+var lastWOEID = 0;
+var locChanged = false;
 
 var cfgTime24hr = true;
 var cfgColorScheme = 'Auto';
@@ -344,6 +346,9 @@ function fetchWeather(loc) {
             console.log('WOEID: ' + woeid);
           }
           
+          locChanged = (woeid != lastWOEID);
+          lastWOEID = woeid;
+          
           if (!cfgTempUnit || cfgTempUnit === '' || cfgTempUnit === 'Auto') {
             // Determine temperature units from country code (US gets F, everyone else gets C)
             if (country == 'US')
@@ -503,6 +508,7 @@ function fetchWeather(loc) {
           console.log('Calendar Offset: ' + cfgCalOffset);
           console.log('Show BT: ' + ((cfgShowBT === true) ? 1 : 0));
           console.log('Show Battery: ' + ((cfgShowBatt === true) ? 1 : 0));
+          console.log('Location Changed: ' + ((locChanged === true) ? 1 : 0));
         }
         
         lastSuccess = curr_time;
@@ -527,7 +533,8 @@ function fetchWeather(loc) {
             "first_day":cfgFirstDay,
             "cal_offset":cfgCalOffset,
             "show_bt":((cfgShowBT === true) ? 1 : 0),
-            "show_batt":((cfgShowBatt === true) ? 1 : 0)});
+            "show_batt":((cfgShowBatt === true) ? 1 : 0),
+            "loc_changed":((locChanged === true) ? 1 : 0)});
       } else {
         console.warn("Error: " + reqWeather.status);
         
@@ -545,6 +552,7 @@ Pebble.addEventListener("ready",
                         function(e) {
                           if (DEBUG) console.log("JS Ready");
                           loadSettings();
+                          //localStorage.clear();
                         });
 
 Pebble.addEventListener("appmessage",
