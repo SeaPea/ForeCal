@@ -83,6 +83,7 @@ static int prev_daytime = 99;
 static bool force_sun_update = false;
 static int sun_update_count = 0;
 static bool last_error = false;
+static bool bt_connected = false;
 
 // App Message Keys for Tuples transferred from Javascript
 enum MessageKey {
@@ -199,6 +200,9 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
           strcpy(status, "Run phone app");
         else
           strcpy(status, "BT not conn.");
+        break;
+      case APP_MSG_SEND_TIMEOUT:
+        strcpy(status, "Comm Timeout");
         break;
       default:
         snprintf(status, sizeof(status), "Comm error:%d", app_message_error);
@@ -462,6 +466,7 @@ static void update_bt_icon(bool connected) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
     layer_set_hidden(bitmap_layer_get_layer(bt_layer), true);
     
+    // Play long vibe pattern on BT disconnect
     VibePattern pat = {
       .durations = bt_warn_pattern,
       .num_segments = ARRAY_LENGTH(bt_warn_pattern),
@@ -474,7 +479,8 @@ static void update_bt_icon(bool connected) {
 static void handle_bt_timeout(void *data) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Update - 15sec");
   bt_timer = NULL;
-  update_bt_icon(bluetooth_connection_service_peek());
+  bt_connected = bluetooth_connection_service_peek();
+  update_bt_icon(bt_connected);
 }
 
 // Handle Bluetooth status updates
@@ -486,8 +492,15 @@ static void handle_bt_update(bool connected) {
     
     update_bt_icon(connected);
     
-    // If reconnected after last weather update failed, try updating the weather again in 5 seconds
-    if (!loading && last_error) app_timer_register(5000, handle_reconnect_delay, NULL);
+    if (!loading) {
+      // If wasn't connected for at least 15 seconds, play short vibe on reconnecting
+      if (!bt_connected) vibes_short_pulse();
+      
+      // If reconnected after last weather update failed, try updating the weather again in 5 seconds
+      if (last_error) app_timer_register(5000, handle_reconnect_delay, NULL);
+    }
+    
+    bt_connected = true;
   }
   else {
     // If disconnected, wait 15 seconds to update BT icon in case of reconnect
