@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ForeCal Settings</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+		<style type="text/css">
+			.setting { margin: 10px 5px 0px 5px; }
+			.footnote { font-size: small; }
+			input, select { font-size: larger; }
+			input[type=checkbox] {
+					-webkit-transform: scale(2,2);
+			}
+		</style>
+		<script type="text/javascript" language="Javascript">
+			function querySt(Key) {
+				var url = window.location.href;
+				KeysValues = url.split(/[\?&]+/);
+				for (i = 0; i < KeysValues.length; i++) {
+						KeyValue = KeysValues[i].split('=');
+						if (KeyValue[0].toUpperCase() == Key.toUpperCase()) {
+								return decodeURIComponent(KeyValue[1]);
+						}
+				}
+				
+				return '';
+			}
+			
+			function getSettings() {
+				var colorScheme = document.getElementById('ColorScheme');
+				var showBT = document.getElementById('ShowBT');
+				var btVibes = document.getElementById('BTVibes');
+				var showBatt = document.getElementById('ShowBatt');
+				var forecastHour = document.getElementById('ForecastHour');
+				var forecastMin = document.getElementById('ForecastMin');
+				var useGPS = document.getElementById('UseGPS');
+				var weatherLoc = document.getElementById('WeatherLoc');
+				var tempUnit = document.getElementById('TempUnit');
+				var updateInterval = document.getElementById('UpdateInterval');
+				var firstDay = document.getElementById('FirstDay');
+				var calOffset = document.getElementById('CalOffset');
+				
+				var qsColorScheme = querySt('ColorScheme');
+				var qsShowBT = querySt('ShowBT');
+				var qsBTVibes = querySt('BTVibes');
+				var qsShowBatt = querySt('ShowBatt');
+				var qsForecastHour = querySt('ForecastHour');
+				var qsForecastMin = querySt('ForecastMin');
+				var qsUseGPS = querySt('UseGPS');
+				var qsWeatherLoc = querySt('WeatherLoc');
+				var qsTempUnit = querySt('TempUnit');
+				var qsUpdateInterval = querySt('UpdateInterval');
+				var qsFirstDay = querySt('FirstDay');
+				var qsCalOffset = querySt('CalOffset');
+				
+				if (qsColorScheme != '') {
+					colorScheme.value = qsColorScheme;
+				}
+				if (qsShowBT != '') {
+					showBT.checked = (qsShowBT == 'true');
+				}
+				if (qsBTVibes != '') {
+					btVibes.checked = (qsBTVibes == 'true');
+				}
+				if (qsShowBatt != '') {
+					showBatt.checked = (qsShowBatt == 'true');
+				}
+				if (qsForecastHour != '') {
+					forecastHour.value = qsForecastHour;
+				}
+				if (qsForecastMin != '') {
+					forecastMin.value = qsForecastMin;
+				}
+				if (qsUseGPS != '') {
+					useGPS.checked = (qsUseGPS == 'true');
+				}
+				if (qsWeatherLoc.trim() != '') {
+					useGPS.checked = false;
+					weatherLoc.value = qsWeatherLoc.trim();
+				}
+				if (qsTempUnit != '') {
+					tempUnit.value = qsTempUnit;
+				}
+				if (qsUpdateInterval != '') {
+					updateInterval.value = qsUpdateInterval;
+				}
+				if (qsFirstDay != '') {
+					firstDay.value = qsFirstDay;
+				}
+				if (qsCalOffset != '') {
+					calOffset.value = qsCalOffset;
+				}
+			}
+			
+			function validateInput() {
+				
+				var useGPS = document.getElementById('UseGPS');
+				var weatherLoc = document.getElementById('WeatherLoc');
+				
+				if (!useGPS.checked && weatherLoc.value == '') {
+					weatherLoc.focus();
+					return false;
+				}
+				
+				return true;
+			}
+			
+			function updateGPS() {
+				
+				var useGPS = document.getElementById('UseGPS');
+				var weatherLoc = document.getElementById('WeatherLoc');
+				
+				if (useGPS.checked)
+					weatherLoc.value = '';
+				
+			}
+			
+			function updateWeatherLoc() {
+				
+				var useGPS = document.getElementById('UseGPS');
+				var weatherLoc = document.getElementById('WeatherLoc');
+				
+				useGPS.checked = (weatherLoc.value.trim() == '');
+				
+			}
+			
+			function applySettings() {
+				if (validateInput()) {
+					
+					var colorScheme = document.getElementById('ColorScheme');
+					var showBT = document.getElementById('ShowBT');
+					var btVibes = document.getElementById('BTVibes');
+					var showBatt = document.getElementById('ShowBatt');
+					var forecastHour = document.getElementById('ForecastHour');
+					var forecastMin = document.getElementById('ForecastMin');
+					var useGPS = document.getElementById('UseGPS');
+					var weatherLoc = document.getElementById('WeatherLoc');
+					var tempUnit = document.getElementById('TempUnit');
+					var updateInterval = document.getElementById('UpdateInterval');
+					var firstDay = document.getElementById('FirstDay');
+					var calOffset = document.getElementById('CalOffset');
+					
+					var settings = JSON.stringify({
+						'ColorScheme': colorScheme.value,
+						'ShowBT': showBT.checked,
+						'BTVibes': btVibes.checked,
+						'ShowBatt': showBatt.checked,
+						'ForecastHour': parseInt(forecastHour.value),
+						'ForecastMin': parseInt(forecastMin.value),
+						'UseGPS': useGPS.checked,
+						'WeatherLoc': weatherLoc.value.trim(),
+						'TempUnit': tempUnit.value,
+						'UpdateInterval': parseInt(updateInterval.value),
+						'FirstDay': parseInt(firstDay.value),
+						'CalOffset': parseInt(calOffset.value)
+						});
+						
+					document.location = "pebblejs://close#" + encodeURIComponent(settings);
+				}
+			}
+		</script>
+</head>
+<body style="font-family: sans-serif;" onload="getSettings();">
+	<div style="clear: both;"></div>
+	<div class="setting">
+		<fieldset>
+			<legend>Color Scheme:</legend>
+			<select name="ColorScheme" id="ColorScheme">
+				<option value="Auto">Auto</option>                   
+				<option value="WhiteOnBlack">White On Black</option>
+				<option value="BlackOnWhite">Black On White</option>
+			</select><br />
+			<span class="footnote">(Auto = Black on White during day, White on Black at night)</span>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<legend>Status:</legend>
+			<input type="checkbox" name="ShowBT" id="ShowBT" value="ShowBT" checked="checked" />&nbsp;
+			<label for="ShowBT">Show Bluetooth Status</label><br /><br />
+			<input type="checkbox" name="BTVibes" id="BTVibes" value="BTVibes" checked="checked" />&nbsp;
+			<label for="ShowBT">Vibrate on Connect/Disconnect</label><br /><br />
+			<input type="checkbox" name="ShowBatt" id="ShowBatt" value="ShowBatt" checked="checked" />&nbsp;
+			<label for="ShowBT">Show Battery Status</label>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<legend>Show Tomorrow's Forecast After:</legend>
+			<select name="ForecastHour" id="ForecastHour">
+				<option value="13">13</option>
+				<option value="14">14</option>
+				<option value="15">15</option>
+				<option value="16">16</option>
+				<option value="17">17</option>
+				<option value="18" selected="selected">18</option>
+				<option value="19">19</option>
+				<option value="20">20</option>
+				<option value="21">21</option>
+				<option value="22">22</option>
+				<option value="23">23</option>
+				<option value="0">00</option>
+			</select>:
+			<select name="ForecastMin" id="ForecastMin">
+				<option value="0">00</option>
+				<option value="15">15</option>
+				<option value="30">30</option>
+				<option value="45">45</option>
+			</select>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<legend>Weather Location:</legend>
+			<input type="checkbox" name="UseGPS" id="UseGPS" value="UseGPS" checked="checked" onchange="updateGPS();" />&nbsp;
+			<label for="UseGPS">Use GPS Location</label> <span style="font-style: italic;">OR</span><br /><br />
+			<label for="WeatherLoc">Use Fixed Location:</label><br />
+			<input type="text" name="WeatherLoc" id="WeatherLoc" style="width: 90%" onchange="updateWeatherLoc();" /><br />
+			<span class="footnote">(Must work in Yahoo Weather and identify a unique place - e.g. City, State or City, Country)</span>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<legend>Temperature Unit:</legend>
+			<select name="TempUnit" id="TempUnit">
+				<option value="Auto">Auto</option>
+				<option value="C">Celcius</option>
+				<option value="F">Fahrenheit</option>
+			</select>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<legend>Weather Update Interval:</legend>
+			<select name="UpdateInterval" id="UpdateInterval">
+				<option value="20">Every 20 minutes</option>
+				<option value="30">Every 30 minutes</option>
+				<option value="0">Every 60 minutes</option>
+			</select><br />
+			<span class="footnote">(Starting on the hour)</span>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<legend>First Day of the Week:</legend>
+			<select name="FirstDay" id="FirstDay">
+				<option value="0" selected="selected">Sunday</option>
+				<option value="1">Monday</option>
+			</select>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<legend>Calendar Weeks:</legend>
+			<select name="CalOffset" id="CalOffset">
+				<option value="0" selected="selected">Last wk + this wk + next wk</option>
+				<option value="7">This week + next 2 weeks</option>
+			</select>
+		</fieldset>
+	</div>
+	<div class="setting">
+		<fieldset>
+			<input type="button" value="Apply &amp; Save" onclick="applySettings();" />
+			<div style="float: right; font-size: xx-small;">
+				v1.5
+			</div>
+		</fieldset>
+	</div>
+</body>
+</html>
