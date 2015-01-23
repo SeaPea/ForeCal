@@ -1,6 +1,7 @@
 {
     "appKeys": {
         "auto_daymode": 14,
+        "bt_vibes": 22,
         "cal_offset": 17,
         "city": 9,
         "condition": 7,
@@ -172,7 +173,7 @@
     "shortName": "ForeCal",
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
     "versionCode": 2,
-    "versionLabel": "1.4",
+    "versionLabel": "1.5",
     "watchapp": {
         "watchface": true
     }

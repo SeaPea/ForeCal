@@ -1,13 +1,9 @@
 #include "pebble.h"
+#include "common.h"
 
-//#define DEBUG
-#ifndef DEBUG
-#undef APP_LOG
-#define APP_LOG(...)
-#endif
-  
-#define MyTupletCString(_key, _cstring) \
-((const Tuplet) { .type = TUPLE_CSTRING, .key = _key, .cstring = { .data = _cstring, .length = strlen(_cstring) + 1 }})
+#define SAVEDATA_KEY 30
+#define SAVE_VER_KEY 99
+#define SAVE_VER 1
   
 static Window *window;
 
@@ -49,11 +45,6 @@ static InverterLayer *curr_date_layer = NULL;
 static InverterLayer *daymode_layer = NULL;
 
 static const uint32_t bt_warn_pattern[] = { 1000, 500, 1000 };
-static int update_interval = 20;
-static int show_bt = 1;
-static int show_batt = 1;
-static int cal_offset = 0;
-static int startday = 0;
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
 static const int inbound_size = 256;
@@ -64,21 +55,7 @@ static uint8_t sync_buffer[512];
 static char current_time[] = "00:00";
 static char current_date[] = "Sun Jan 01";
 
-static char status[50] = "Fetching...";
-static char city[50] = "";
-static char curr_temp[10] = "";
-static char sun_rise_set[7] = "";
-static char forecast_day[9] = "";
-static char high_temp[10] = "";
-static char low_temp[10] = "";
-static int icon = 0;
-static char condition[50] = "";
-static int daymode = 0;
-static int sun_rise_hour = 99;
-static int sun_rise_min = 99;
-static int sun_set_hour = 99;
-static int sun_set_min = 99;
-static int auto_daymode = 99;
+static savedata_t s_savedata;
 static int prev_daytime = 99;
 static bool force_sun_update = false;
 static int sun_update_count = 0;
@@ -108,7 +85,8 @@ enum MessageKey {
   SHOW_BT_KEY = 18,
   SHOW_BATT_KEY = 19,
   TIME_24HR_KEY = 20,
-  LOC_CHANGED_KEY = 21
+  LOC_CHANGED_KEY = 21,
+  BT_VIBES_KEY = 22
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -139,8 +117,8 @@ static void handle_status_timer(void *data) {
 #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Status timer event fired");
 #endif
-  if (status != NULL && strlen(status) > 0)
-    text_layer_set_text(status_layer, status);
+  if (s_savedata.status != NULL && strlen(s_savedata.status) > 0)
+    text_layer_set_text(status_layer, s_savedata.status);
   else {
 #ifdef DEBUG
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Status is blank");
@@ -151,34 +129,12 @@ static void handle_status_timer(void *data) {
   if (!loading) {
     // Save weather data after initial call and after a brief delay since 
     // writing is slow and can interfere with other things
-#ifdef DEBUG
+
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Saving weather data");
-#endif
-    persist_write_int(WEATHER_ICON_KEY, icon);
-    persist_write_string(WEATHER_STATUS_KEY, status);
-    persist_write_string(WEATHER_CITY_KEY, city);
-#ifdef DEBUG
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Saving Current Temp: %s", curr_temp);
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Current Temp Storage Result: %d", persist_write_string(WEATHER_CURR_TEMP_KEY, curr_temp));
-#else
-    persist_write_string(WEATHER_CURR_TEMP_KEY, curr_temp);
-#endif
-    persist_write_string(WEATHER_SUN_RISE_SET_KEY, sun_rise_set);
-    persist_write_string(WEATHER_FORECAST_DAY_KEY, forecast_day);
-    persist_write_string(WEATHER_HIGH_TEMP_KEY, high_temp);
-    persist_write_string(WEATHER_LOW_TEMP_KEY, low_temp);
-    persist_write_string(WEATHER_CONDITION_KEY, condition);
-    persist_write_int(WEATHER_DAYMODE_KEY, daymode);
-    persist_write_int(WEATHER_SUN_RISE_HOUR_KEY, sun_rise_hour);
-    persist_write_int(WEATHER_SUN_RISE_MIN_KEY, sun_rise_min);
-    persist_write_int(WEATHER_SUN_SET_HOUR_KEY, sun_set_hour);
-    persist_write_int(WEATHER_SUN_SET_MIN_KEY, sun_set_min);
-    persist_write_int(WEATHER_AUTO_DAYMODE_KEY, auto_daymode);
-    persist_write_int(WEATHER_UPDATE_INTERVAL_KEY, update_interval);
-    persist_write_int(CAL_FIRST_DAY_KEY, startday);
-    persist_write_int(CAL_OFFSET_KEY, cal_offset);
-    persist_write_int(SHOW_BT_KEY, show_bt);
-    persist_write_int(SHOW_BATT_KEY, show_batt);
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Saving Current Temp: %s", s_savedata.curr_temp);
+    
+    persist_write_int(SAVE_VER_KEY, SAVE_VER);
+    persist_write_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
   }
 }
 
@@ -197,26 +153,27 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
     switch (app_message_error) {
       case APP_MSG_NOT_CONNECTED:
         if (bluetooth_connection_service_peek())
-          strcpy(status, "Run phone app");
+          strncpy(s_savedata.status, "Run phone app", sizeof(s_savedata.status));
         else
-          strcpy(status, "BT not conn.");
+          strncpy(s_savedata.status, "BT not conn.", sizeof(s_savedata.status));
         break;
       case APP_MSG_SEND_TIMEOUT:
-        strcpy(status, "Comm Timeout");
+        strncpy(s_savedata.status, "Comm Timeout", sizeof(s_savedata.status));
         break;
       default:
-        snprintf(status, sizeof(status), "Comm error:%d", app_message_error);
+        snprintf(s_savedata.status, sizeof(s_savedata.status), "Comm error:%d", app_message_error);
     }
     
   } else {
-    snprintf(status, sizeof(status), "Data error:%d", dict_error);
+    snprintf(s_savedata.status, sizeof(s_savedata.status), "Data error:%d", dict_error);
   }
   
-  text_layer_set_text(status_layer, status);
+  text_layer_set_text(status_layer, s_savedata.status);
 }
 
 static void update_sun_layer(struct tm *t) {
-  if (sun_rise_hour != 99 && sun_rise_min != 99 && sun_set_hour != 99 && sun_set_min != 99) {
+  if (s_savedata.sun_rise_hour != 99 && s_savedata.sun_rise_min != 99 && 
+      s_savedata.sun_set_hour != 99 && s_savedata.sun_set_min != 99) {
     
     if (t == NULL) {
       // Get current time
@@ -227,11 +184,14 @@ static void update_sun_layer(struct tm *t) {
     
     bool daytime = true;
     
-    if (t->tm_hour < sun_rise_hour || (t->tm_hour == sun_rise_hour && t->tm_min <= sun_rise_min) ||
-        t->tm_hour > sun_set_hour || (t->tm_hour == sun_set_hour && t->tm_min >= sun_set_min))
+    if (t->tm_hour < s_savedata.sun_rise_hour || 
+          (t->tm_hour == s_savedata.sun_rise_hour && t->tm_min <= s_savedata.sun_rise_min) ||
+        t->tm_hour > s_savedata.sun_set_hour || 
+          (t->tm_hour == s_savedata.sun_set_hour && t->tm_min >= s_savedata.sun_set_min))
       daytime = false;
     
-    if ((force_sun_update && sun_update_count >= 4) || (daytime && prev_daytime != 1) || (!daytime && prev_daytime != 0)) {
+    if ((force_sun_update && sun_update_count >= 4) || (daytime && prev_daytime != 1) || 
+        (!daytime && prev_daytime != 0)) {
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Updating sun layer");
       
       if (sun_bitmap)
@@ -241,9 +201,12 @@ static void update_sun_layer(struct tm *t) {
         
         // Day
         if (clock_is_24h_style())
-          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_set_hour, sun_set_min);
+          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d", 
+                   s_savedata.sun_set_hour, s_savedata.sun_set_min);
         else
-          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d%s", (((sun_set_hour + 11) % 12) + 1), sun_set_min, (sun_set_hour >= 12 ? "P" : "a"));
+          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d%s", 
+                   (((s_savedata.sun_set_hour + 11) % 12) + 1), s_savedata.sun_set_min, 
+                   (s_savedata.sun_set_hour >= 12 ? "P" : "a"));
           
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNSET);
         prev_daytime = 1;
@@ -252,22 +215,25 @@ static void update_sun_layer(struct tm *t) {
         
         // Night
         if (clock_is_24h_style())
-          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d", sun_rise_hour, sun_rise_min);
+          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d", 
+                   s_savedata.sun_rise_hour, s_savedata.sun_rise_min);
         else 
-          snprintf(sun_rise_set, sizeof(sun_rise_set), "%d:%.2d%s", (((sun_rise_hour + 11) % 12) + 1), sun_rise_min, (sun_rise_hour >= 12 ? "P" : "a"));
+          snprintf(s_savedata.sun_rise_set, sizeof(s_savedata.sun_rise_set), "%d:%.2d%s", 
+                   (((s_savedata.sun_rise_hour + 11) % 12) + 1), s_savedata.sun_rise_min, 
+                   (s_savedata.sun_rise_hour >= 12 ? "P" : "a"));
         
         sun_bitmap = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_SUNRISE);
         prev_daytime = 0;
         
       }
 
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", sun_rise_set);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", s_savedata.sun_rise_set);
       
-      if (auto_daymode == 1) 
+      if (s_savedata.auto_daymode) 
         layer_set_hidden(inverter_layer_get_layer(daymode_layer), !daytime);
       
       bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
-      text_layer_set_text(sun_rise_set_layer, sun_rise_set);
+      text_layer_set_text(sun_rise_set_layer, s_savedata.sun_rise_set);
       layer_set_hidden(bitmap_layer_get_layer(sun_layer), false);
       
       force_sun_update = false;
@@ -290,18 +256,18 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       if (icon_bitmap) {
         gbitmap_destroy(icon_bitmap);
       }
-      icon = new_tuple->value->uint8;
-      layer_set_hidden(bitmap_layer_get_layer(icon_layer), (icon == 0));
-      icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[icon]);
+      s_savedata.icon = new_tuple->value->uint8;
+      layer_set_hidden(bitmap_layer_get_layer(icon_layer), (s_savedata.icon == 0));
+      icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[s_savedata.icon]);
       bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
       break;
     case WEATHER_STATUS_KEY:
       // Save status for displaying after showing City for 5 seconds
-      strncpy(status, new_tuple->value->cstring, sizeof(status));
+      strncpy(s_savedata.status, new_tuple->value->cstring, sizeof(s_savedata.status));
       break;
     case WEATHER_CITY_KEY:
-      strncpy(city, new_tuple->value->cstring, sizeof(city));
-      text_layer_set_text(status_layer, city);
+      strncpy(s_savedata.city, new_tuple->value->cstring, sizeof(s_savedata.city));
+      text_layer_set_text(status_layer, s_savedata.city);
       // Show City for 5 seconds and then replace with Status
       if (status_timer) {
         app_timer_reschedule(status_timer, 5000);
@@ -311,80 +277,84 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       }
       break;
     case WEATHER_CURR_TEMP_KEY:
-      strncpy(curr_temp, new_tuple->value->cstring, sizeof(curr_temp));
-      text_layer_set_text(curr_temp_layer, curr_temp); 
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Displaying Current Temp: %s", curr_temp);
+      strncpy(s_savedata.curr_temp, new_tuple->value->cstring, sizeof(s_savedata.curr_temp));
+      text_layer_set_text(curr_temp_layer, s_savedata.curr_temp);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Displaying Current Temp: %s", s_savedata.curr_temp);
       break;
     case WEATHER_FORECAST_DAY_KEY:
-      strncpy(forecast_day, new_tuple->value->cstring, sizeof(forecast_day));
-      text_layer_set_text(forecast_day_layer, forecast_day);
+      strncpy(s_savedata.forecast_day, new_tuple->value->cstring, sizeof(s_savedata.forecast_day));
+      text_layer_set_text(forecast_day_layer, s_savedata.forecast_day);
       break;
     case WEATHER_HIGH_TEMP_KEY:
-      strncpy(high_temp, new_tuple->value->cstring, sizeof(high_temp));
-      text_layer_set_text(high_temp_layer, high_temp);
-      layer_set_hidden(text_layer_get_layer(high_label_layer), strlen(high_temp) == 0);
+      strncpy(s_savedata.high_temp, new_tuple->value->cstring, sizeof(s_savedata.high_temp));
+      text_layer_set_text(high_temp_layer, s_savedata.high_temp);
+      layer_set_hidden(text_layer_get_layer(high_label_layer), strlen(s_savedata.high_temp) == 0);
       break;
     case WEATHER_LOW_TEMP_KEY:
-      strncpy(low_temp, new_tuple->value->cstring, sizeof(low_temp));
-      text_layer_set_text(low_temp_layer, low_temp);
-      layer_set_hidden(text_layer_get_layer(low_label_layer), strlen(low_temp) == 0);
+      strncpy(s_savedata.low_temp, new_tuple->value->cstring, sizeof(s_savedata.low_temp));
+      text_layer_set_text(low_temp_layer, s_savedata.low_temp);
+      layer_set_hidden(text_layer_get_layer(low_label_layer), strlen(s_savedata.low_temp) == 0);
       break;
     case WEATHER_CONDITION_KEY:
-      strncpy(condition, new_tuple->value->cstring, sizeof(condition));
-      text_layer_set_text(condition_layer, condition);
+      strncpy(s_savedata.condition, new_tuple->value->cstring, sizeof(s_savedata.condition));
+      text_layer_set_text(condition_layer, s_savedata.condition);
       break;
     case WEATHER_DAYMODE_KEY:
-      daymode = new_tuple->value->uint8;
-      layer_set_hidden(inverter_layer_get_layer(daymode_layer), (daymode == 0));
+      s_savedata.daymode = (new_tuple->value->uint8 == 1);
+      layer_set_hidden(inverter_layer_get_layer(daymode_layer), !s_savedata.daymode);
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_RISE_HOUR_KEY:
-      sun_rise_hour = new_tuple->value->uint8;
+      s_savedata.sun_rise_hour = new_tuple->value->uint8;
       sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_RISE_MIN_KEY:
-      sun_rise_min = new_tuple->value->uint8;
+      s_savedata.sun_rise_min = new_tuple->value->uint8;
       sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_SET_HOUR_KEY:
-      sun_set_hour = new_tuple->value->uint8;
+      s_savedata.sun_set_hour = new_tuple->value->uint8;
       sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_SET_MIN_KEY:
-      sun_set_min = new_tuple->value->uint8;
+      s_savedata.sun_set_min = new_tuple->value->uint8;
       sun_update_count++;
       update_sun_layer(NULL);
       break;
     case WEATHER_AUTO_DAYMODE_KEY:
-      auto_daymode = new_tuple->value->uint8;
+      s_savedata.auto_daymode = (new_tuple->value->uint8 == 1);
       update_sun_layer(NULL);
       break;
     case WEATHER_UPDATE_INTERVAL_KEY:
-      update_interval = new_tuple->value->uint8;
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Update Interval: %d", update_interval);
+      s_savedata.update_interval = new_tuple->value->uint8;
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Update Interval: %d", s_savedata.update_interval);
       break;
     case CAL_FIRST_DAY_KEY:
-      startday = new_tuple->value->uint8;
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "First Day: %d", startday);
+      s_savedata.startday = new_tuple->value->uint8;
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "First Day: %d", s_savedata.startday);
       layer_mark_dirty(cal_layer);
       break;
     case CAL_OFFSET_KEY:
-      cal_offset = new_tuple->value->uint8;
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Calendar Offset: %d", cal_offset);
+      s_savedata.cal_offset = new_tuple->value->uint8;
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Calendar Offset: %d", s_savedata.cal_offset);
       layer_mark_dirty(cal_layer);
       break;
     case SHOW_BT_KEY:
-      show_bt = new_tuple->value->uint8;
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Show BT: %d", show_bt);
-      layer_set_hidden(bitmap_layer_get_layer(bt_layer), !bluetooth_connection_service_peek() || (show_bt == 0));
+      s_savedata.show_bt = (new_tuple->value->uint8 == 1);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Show BT: %d (%s)", s_savedata.show_bt, s_savedata.show_bt ? "ON" : "OFF");
+      layer_set_hidden(bitmap_layer_get_layer(bt_layer), !bluetooth_connection_service_peek() || !s_savedata.show_bt);
+      break;
+    case BT_VIBES_KEY:
+      s_savedata.bt_vibes = (new_tuple->value->uint8 == 1);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Vibes: %d (%s)", s_savedata.bt_vibes, s_savedata.bt_vibes ? "ON" : "OFF");
       break;
     case SHOW_BATT_KEY:
-      show_batt = new_tuple->value->uint8;
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Show Battery: %d", show_batt);
-      layer_set_hidden(bitmap_layer_get_layer(batt_layer), (show_batt == 0));
+      s_savedata.show_batt = (new_tuple->value->uint8 == 1);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Show Battery: %d", s_savedata.show_batt);
+      layer_set_hidden(bitmap_layer_get_layer(batt_layer), !s_savedata.show_batt);
       break;
     case LOC_CHANGED_KEY:
       if (!loading && (int)new_tuple->value->uint8 == 1) {
@@ -392,6 +362,9 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         force_sun_update = true;
         update_sun_layer(NULL);
       }
+      break;
+    default:
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Unknown App Message Key: %d", (int)key);
       break;
   }
 }
@@ -423,7 +396,8 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     clock_copy_time_string(current_time, sizeof(current_time));
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
-    if ((update_interval == 0 && tick_time->tm_min == 0) || tick_time->tm_min % update_interval == 0) {
+    if ((s_savedata.update_interval == 0 && tick_time->tm_min == 0) || 
+        tick_time->tm_min % s_savedata.update_interval == 0) {
       update_weather(); // Update the weather every X minutes
     }
     update_sun_layer(tick_time);
@@ -460,18 +434,20 @@ static void handle_reconnect_delay(void *data) {
 static void update_bt_icon(bool connected) {
   if (connected) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT Connected");
-    layer_set_hidden(bitmap_layer_get_layer(bt_layer), false || (show_bt == 0));
+    layer_set_hidden(bitmap_layer_get_layer(bt_layer), !s_savedata.show_bt);
   }
   else {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
     layer_set_hidden(bitmap_layer_get_layer(bt_layer), true);
     
-    // Play long vibe pattern on BT disconnect
-    VibePattern pat = {
-      .durations = bt_warn_pattern,
-      .num_segments = ARRAY_LENGTH(bt_warn_pattern),
-    };
-    vibes_enqueue_custom_pattern(pat);
+    if (s_savedata.bt_vibes) {
+      // Play long vibe pattern on BT disconnect
+      VibePattern pat = {
+        .durations = bt_warn_pattern,
+        .num_segments = ARRAY_LENGTH(bt_warn_pattern),
+      };
+      vibes_enqueue_custom_pattern(pat);
+    }
   }
 }
 
@@ -494,7 +470,7 @@ static void handle_bt_update(bool connected) {
     
     if (!loading) {
       // If wasn't connected for at least 15 seconds, play short vibe on reconnecting
-      if (!bt_connected) vibes_short_pulse();
+      if (!bt_connected && s_savedata.bt_vibes) vibes_short_pulse();
       
       // If reconnected after last weather update failed, try updating the weather again in 5 seconds
       if (last_error) app_timer_register(5000, handle_reconnect_delay, NULL);
@@ -583,11 +559,11 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   
   // Draw week day names
   for (int d = 0; d < 7; d++) {
-    if (t->tm_wday == ((d + startday) % 7))
+    if (t->tm_wday == ((d + s_savedata.startday) % 7))
       curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
     else
       curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-    graphics_draw_text(ctx, weekdays[(d + startday) % 7], curr_font, GRect((d * 20) + d, -4, 19, 14), 
+    graphics_draw_text(ctx, weekdays[(d + s_savedata.startday) % 7], curr_font, GRect((d * 20) + d, -4, 19, 14), 
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
   
@@ -599,21 +575,108 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   int curr_mon_len = 31 - ((curr_mon == 2) ? (3 - leap_year) : ((curr_mon - 1) % 7 % 2));
   
   // Draw previous week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + startday + cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 7);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + s_savedata.startday + s_savedata.cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 7);
   // Draw current week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + startday + cal_offset, curr_mon_len, prev_mon_len, GColorBlack, 19);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + s_savedata.startday + s_savedata.cal_offset, curr_mon_len, prev_mon_len, GColorBlack, 19);
   // Draw next week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + startday + cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 31);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + s_savedata.startday + s_savedata.cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 31);
   
   // Invert current date colors to highlight it
-  int curr_day = (t->tm_wday + 7 - startday) % 7;
-  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((curr_day  * 20) + curr_day, 23 - ((cal_offset/7)*11), 19, 11));
+  int curr_day = (t->tm_wday + 7 - s_savedata.startday) % 7;
+  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((curr_day  * 20) + curr_day, 23 - ((s_savedata.cal_offset/7)*11), 19, 11));
 }
 
 static void window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   
   loading = true;
+  
+  // Init settings and weather data
+  s_savedata.show_bt = true;
+  s_savedata.bt_vibes = true;
+  s_savedata.show_batt = true;
+  s_savedata.startday = 0;
+  s_savedata.cal_offset = 0;
+  s_savedata.daymode = false;
+  s_savedata.status[0] = '\0';
+  s_savedata.curr_temp[0] = '\0';
+  s_savedata.forecast_day[0] = '\0';
+  s_savedata.high_temp[0] = '\0';
+  s_savedata.low_temp[0] = '\0';
+  s_savedata.icon = 0;
+  s_savedata.condition[0] = '\0';
+  s_savedata.sun_rise_hour = 99;
+  s_savedata.sun_rise_min = 99;
+  s_savedata.sun_set_hour = 99;
+  s_savedata.sun_set_min = 99;
+  s_savedata.auto_daymode = true;
+  s_savedata.update_interval = 20;
+  
+  if (persist_exists(SAVE_VER_KEY)) {
+    // Currently only one structure version, so no need to check at the moment
+    if (persist_exists(SAVEDATA_KEY))
+      persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
+  }
+  else {
+    if (persist_exists(SHOW_BT_KEY))
+      s_savedata.show_bt = (persist_read_int(SHOW_BT_KEY) == 1);
+    
+    if (persist_exists(SHOW_BATT_KEY))
+      s_savedata.show_batt = (persist_read_int(SHOW_BATT_KEY) == 1);
+    
+    if (persist_exists(CAL_FIRST_DAY_KEY))
+      s_savedata.startday = persist_read_int(CAL_FIRST_DAY_KEY);
+    
+    if (persist_exists(CAL_OFFSET_KEY))
+      s_savedata.cal_offset = persist_read_int(CAL_OFFSET_KEY);
+    
+    if (persist_exists(WEATHER_DAYMODE_KEY))
+      s_savedata.daymode = (persist_read_int(WEATHER_DAYMODE_KEY) == 1);
+    
+    // Get previously fetched results in case of comm error and use as initial values
+    if (persist_exists(WEATHER_STATUS_KEY))
+      persist_read_string(WEATHER_STATUS_KEY, s_savedata.status, sizeof(s_savedata.status));
+    
+    if (persist_exists(WEATHER_CURR_TEMP_KEY)) {
+      persist_read_string(WEATHER_CURR_TEMP_KEY, s_savedata.curr_temp, sizeof(s_savedata.curr_temp));
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Stored Current Temp: %s", s_savedata.curr_temp);
+    } else {
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Current temp not stored");
+    }
+    
+    if (persist_exists(WEATHER_FORECAST_DAY_KEY))
+      persist_read_string(WEATHER_FORECAST_DAY_KEY, s_savedata.forecast_day, sizeof(s_savedata.forecast_day));
+    
+    if (persist_exists(WEATHER_HIGH_TEMP_KEY))
+      persist_read_string(WEATHER_HIGH_TEMP_KEY, s_savedata.high_temp, sizeof(s_savedata.high_temp));
+    
+    if (persist_exists(WEATHER_LOW_TEMP_KEY))
+      persist_read_string(WEATHER_LOW_TEMP_KEY, s_savedata.low_temp, sizeof(s_savedata.low_temp));
+    
+    if (persist_exists(WEATHER_ICON_KEY))
+      s_savedata.icon = persist_read_int(WEATHER_ICON_KEY);
+    
+    if (persist_exists(WEATHER_CONDITION_KEY))
+      persist_read_string(WEATHER_CONDITION_KEY, s_savedata.condition, sizeof(s_savedata.condition));
+    
+    if (persist_exists(WEATHER_SUN_RISE_HOUR_KEY))
+      s_savedata.sun_rise_hour = persist_read_int(WEATHER_SUN_RISE_HOUR_KEY);
+    
+    if (persist_exists(WEATHER_SUN_RISE_MIN_KEY))
+      s_savedata.sun_rise_min = persist_read_int(WEATHER_SUN_RISE_MIN_KEY);
+    
+    if (persist_exists(WEATHER_SUN_SET_HOUR_KEY))
+      s_savedata.sun_set_hour = persist_read_int(WEATHER_SUN_SET_HOUR_KEY);
+    
+    if (persist_exists(WEATHER_SUN_SET_MIN_KEY))
+      s_savedata.sun_set_min = persist_read_int(WEATHER_SUN_SET_MIN_KEY);
+    
+    if (persist_exists(WEATHER_AUTO_DAYMODE_KEY))
+      s_savedata.auto_daymode = (persist_read_int(WEATHER_AUTO_DAYMODE_KEY) == 1);
+    
+    if (persist_exists(WEATHER_UPDATE_INTERVAL_KEY))
+      s_savedata.update_interval = persist_read_int(WEATHER_UPDATE_INTERVAL_KEY);
+  }
   
   // Setup 'current' layer (time, date, current temp, battery, bluetooth)
   current_layer = layer_create(GRect(0, 0, 144, 58));
@@ -642,12 +705,6 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
   
-  if (persist_exists(SHOW_BT_KEY))
-    show_bt = persist_read_int(SHOW_BT_KEY);
-  
-  if (persist_exists(SHOW_BATT_KEY))
-    show_batt = persist_read_int(SHOW_BATT_KEY);
-  
   bt_layer = bitmap_layer_create(GRect(129, 1, 9, 16));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
   bitmap_layer_set_bitmap(bt_layer, bt_icon);
@@ -656,7 +713,7 @@ static void window_load(Window *window) {
   batt_layer = bitmap_layer_create(GRect(126, 18, 16, 8));
   layer_add_child(current_layer, bitmap_layer_get_layer(batt_layer));
   BatteryChargeState batt_state = battery_state_service_peek();
-  layer_set_hidden(bitmap_layer_get_layer(batt_layer), (show_batt == 0));
+  layer_set_hidden(bitmap_layer_get_layer(batt_layer), s_savedata.show_batt);
   handle_batt_update(batt_state);
   battery_state_service_subscribe(handle_batt_update);
   
@@ -749,12 +806,6 @@ static void window_load(Window *window) {
   
   layer_add_child(window_layer, forecast_layer);
   
-  if (persist_exists(CAL_FIRST_DAY_KEY))
-    startday = persist_read_int(CAL_FIRST_DAY_KEY);
-  
-  if (persist_exists(CAL_OFFSET_KEY))
-    cal_offset = persist_read_int(CAL_OFFSET_KEY);
-  
   // Setup 3 week calendar layer
   cal_layer = layer_create(GRect(0, 122, 144, 47));
   layer_add_child(window_layer, cal_layer);
@@ -763,11 +814,8 @@ static void window_load(Window *window) {
   
   layer_set_update_proc(cal_layer, cal_layer_draw);
   
-  if (persist_exists(WEATHER_DAYMODE_KEY))
-    daymode = persist_read_int(WEATHER_DAYMODE_KEY);
-  
   daymode_layer = inverter_layer_create(GRect(0, 0, 144, 168));
-  layer_set_hidden(inverter_layer_get_layer(daymode_layer), (daymode == 0));
+  layer_set_hidden(inverter_layer_get_layer(daymode_layer), s_savedata.daymode);
   layer_add_child(window_layer, inverter_layer_get_layer(daymode_layer));
   
   // Get current time
@@ -779,73 +827,31 @@ static void window_load(Window *window) {
   // Init time and date
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
-  // Get previously fetched results in case of comm error and use as initial values
-  if (persist_exists(WEATHER_STATUS_KEY))
-    persist_read_string(WEATHER_STATUS_KEY, status, sizeof(status));
   
-  if (persist_exists(WEATHER_CURR_TEMP_KEY)) {
-    persist_read_string(WEATHER_CURR_TEMP_KEY, curr_temp, sizeof(curr_temp));
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Stored Current Temp: %s", curr_temp);
-  } else {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Current temp not stored");
-  }
-  
-  if (persist_exists(WEATHER_FORECAST_DAY_KEY))
-    persist_read_string(WEATHER_FORECAST_DAY_KEY, forecast_day, sizeof(forecast_day));
-  
-  if (persist_exists(WEATHER_HIGH_TEMP_KEY))
-    persist_read_string(WEATHER_HIGH_TEMP_KEY, high_temp, sizeof(high_temp));
-  
-  if (persist_exists(WEATHER_LOW_TEMP_KEY))
-    persist_read_string(WEATHER_LOW_TEMP_KEY, low_temp, sizeof(low_temp));
-  
-  if (persist_exists(WEATHER_ICON_KEY))
-    icon = persist_read_int(WEATHER_ICON_KEY);
-  
-  if (persist_exists(WEATHER_CONDITION_KEY))
-    persist_read_string(WEATHER_CONDITION_KEY, condition, sizeof(condition));
-  
-  if (persist_exists(WEATHER_SUN_RISE_HOUR_KEY))
-    sun_rise_hour = persist_read_int(WEATHER_SUN_RISE_HOUR_KEY);
-  
-  if (persist_exists(WEATHER_SUN_RISE_MIN_KEY))
-    sun_rise_min = persist_read_int(WEATHER_SUN_RISE_MIN_KEY);
-  
-  if (persist_exists(WEATHER_SUN_SET_HOUR_KEY))
-    sun_set_hour = persist_read_int(WEATHER_SUN_SET_HOUR_KEY);
-  
-  if (persist_exists(WEATHER_SUN_SET_MIN_KEY))
-    sun_set_min = persist_read_int(WEATHER_SUN_SET_MIN_KEY);
-  
-  if (persist_exists(WEATHER_AUTO_DAYMODE_KEY))
-    auto_daymode = persist_read_int(WEATHER_AUTO_DAYMODE_KEY);
-  
-  if (persist_exists(WEATHER_UPDATE_INTERVAL_KEY))
-    update_interval = persist_read_int(WEATHER_UPDATE_INTERVAL_KEY);
-  
-  // Initialize weather data fetching
+  // Initialize weather data UI
   Tuplet initial_values[] = {
-    MyTupletCString(WEATHER_STATUS_KEY, status),
-    MyTupletCString(WEATHER_CURR_TEMP_KEY, curr_temp),
-    MyTupletCString(WEATHER_FORECAST_DAY_KEY, forecast_day),
-    MyTupletCString(WEATHER_HIGH_TEMP_KEY, high_temp),
-    MyTupletCString(WEATHER_LOW_TEMP_KEY, low_temp),
-    TupletInteger(WEATHER_ICON_KEY, (uint8_t) icon),
-    MyTupletCString(WEATHER_CONDITION_KEY, condition),
-    TupletInteger(WEATHER_DAYMODE_KEY, (uint8_t) daymode),
+    MyTupletCString(WEATHER_STATUS_KEY, s_savedata.status),
+    MyTupletCString(WEATHER_CURR_TEMP_KEY, s_savedata.curr_temp),
+    MyTupletCString(WEATHER_FORECAST_DAY_KEY, s_savedata.forecast_day),
+    MyTupletCString(WEATHER_HIGH_TEMP_KEY, s_savedata.high_temp),
+    MyTupletCString(WEATHER_LOW_TEMP_KEY, s_savedata.low_temp),
+    TupletInteger(WEATHER_ICON_KEY, s_savedata.icon),
+    MyTupletCString(WEATHER_CONDITION_KEY, s_savedata.condition),
+    TupletInteger(WEATHER_DAYMODE_KEY, s_savedata.daymode ? 1 : 0),
     TupletCString(WEATHER_CITY_KEY, "Fetching..."),
-    TupletInteger(WEATHER_SUN_RISE_HOUR_KEY, (uint8_t) sun_rise_hour),
-    TupletInteger(WEATHER_SUN_RISE_MIN_KEY, (uint8_t) sun_rise_min),
-    TupletInteger(WEATHER_SUN_SET_HOUR_KEY, (uint8_t) sun_set_hour),
-    TupletInteger(WEATHER_SUN_SET_MIN_KEY, (uint8_t) sun_set_min),
-    TupletInteger(WEATHER_AUTO_DAYMODE_KEY, (uint8_t) auto_daymode),
-    TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, (uint8_t) update_interval),
-    TupletInteger(CAL_FIRST_DAY_KEY, (uint8_t) startday),
-    TupletInteger(CAL_OFFSET_KEY, (uint8_t) cal_offset),
-    TupletInteger(SHOW_BT_KEY, (uint8_t) show_bt),
-    TupletInteger(SHOW_BATT_KEY, (uint8_t) show_batt),
-    TupletInteger(TIME_24HR_KEY, (uint8_t) clock_is_24h_style() ? 1 : 0),
-    TupletInteger(LOC_CHANGED_KEY, (uint8_t) 0)
+    TupletInteger(WEATHER_SUN_RISE_HOUR_KEY, s_savedata.sun_rise_hour),
+    TupletInteger(WEATHER_SUN_RISE_MIN_KEY, s_savedata.sun_rise_min),
+    TupletInteger(WEATHER_SUN_SET_HOUR_KEY, s_savedata.sun_set_hour),
+    TupletInteger(WEATHER_SUN_SET_MIN_KEY, s_savedata.sun_set_min),
+    TupletInteger(WEATHER_AUTO_DAYMODE_KEY, s_savedata.auto_daymode ? 1 : 0),
+    TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, s_savedata.update_interval),
+    TupletInteger(CAL_FIRST_DAY_KEY, s_savedata.startday),
+    TupletInteger(CAL_OFFSET_KEY, s_savedata.cal_offset),
+    TupletInteger(SHOW_BT_KEY, s_savedata.show_bt ? 1 : 0),
+    TupletInteger(BT_VIBES_KEY, s_savedata.bt_vibes ? 1 : 0),
+    TupletInteger(SHOW_BATT_KEY, s_savedata.show_batt ? 1 : 0),
+    TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0),
+    TupletInteger(LOC_CHANGED_KEY, 0)
   };
   
   // Initialize comms with phone
