@@ -47,8 +47,8 @@ static InverterLayer *daymode_layer = NULL;
 static const uint32_t bt_warn_pattern[] = { 1000, 500, 1000 };
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
 
-static const int inbound_size = 256;
-static const int outbound_size = 256;
+static const int inbound_size = 512;
+static const int outbound_size = 512;
 static AppSync sync;
 static uint8_t sync_buffer[512];
 
