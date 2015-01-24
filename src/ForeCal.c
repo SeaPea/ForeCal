@@ -61,6 +61,7 @@ static bool force_sun_update = false;
 static int sun_update_count = 0;
 static bool last_error = false;
 static bool bt_connected = false;
+static batt_level_t last_batt_level = BATT_NA;
 
 // App Message Keys for Tuples transferred from Javascript
 enum MessageKey {
@@ -253,13 +254,18 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
   //APP_LOG(APP_LOG_LEVEL_DEBUG, "Message Key: %d", (int)key);
   switch (key) {
     case WEATHER_ICON_KEY:
-      if (icon_bitmap) {
-        gbitmap_destroy(icon_bitmap);
+      if (icon_bitmap == NULL || s_savedata.icon != new_tuple->value->uint8) {
+        if (icon_bitmap) {
+          gbitmap_destroy(icon_bitmap);
+        }
+        s_savedata.icon = new_tuple->value->uint8;
+        layer_set_hidden(bitmap_layer_get_layer(icon_layer), (s_savedata.icon == 0));
+        if (s_savedata.icon > 0) {
+          icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[s_savedata.icon]);
+          bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
+          layer_mark_dirty(bitmap_layer_get_layer(icon_layer));
+        }
       }
-      s_savedata.icon = new_tuple->value->uint8;
-      layer_set_hidden(bitmap_layer_get_layer(icon_layer), (s_savedata.icon == 0));
-      icon_bitmap = gbitmap_create_with_resource(WEATHER_ICONS[s_savedata.icon]);
-      bitmap_layer_set_bitmap(icon_layer, icon_bitmap);
       break;
     case WEATHER_STATUS_KEY:
       // Save status for displaying after showing City for 5 seconds
@@ -491,26 +497,54 @@ static void handle_bt_update(bool connected) {
 
 // Handle battery status updates
 static void handle_batt_update(BatteryChargeState batt_status) {
-  if (batt_icon) {
-    gbitmap_destroy(batt_icon);
-  }
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Battery Update: %d%% (%s)", batt_status.charge_percent, 
+          batt_status.is_charging ? "Charging" : "NOT Charging");
+  
+  batt_level_t new_batt_level;
   
   if (batt_status.is_charging) {
-    batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_CHARGE);
+    new_batt_level = BATT_CHARGING;
   }
   else {
     if (batt_status.charge_percent > 75) {
-      batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_100);
+      new_batt_level = BATT_100;
     } else if (batt_status.charge_percent > 50) {
-      batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_75);
+      new_batt_level = BATT_75;
     } else if (batt_status.charge_percent > 25) {
-      batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_50);
+      new_batt_level = BATT_50;
     } else {
-      batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_25);
+      new_batt_level = BATT_25;
     }
   }
   
-  bitmap_layer_set_bitmap(batt_layer, batt_icon);
+  if (new_batt_level != last_batt_level) {
+    if (batt_icon) {
+      gbitmap_destroy(batt_icon);
+    }
+    
+    switch (new_batt_level) {
+      case BATT_CHARGING:
+        batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_CHARGE);
+        break;
+      case BATT_25:
+        batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_25);
+        break;
+      case BATT_50:
+        batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_50);
+        break;
+      case BATT_75:
+        batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_75);
+        break;
+      case BATT_100:
+        batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_25);
+      case BATT_NA:
+        batt_icon = NULL;
+    }
+    
+    bitmap_layer_set_bitmap(batt_layer, batt_icon);
+    layer_mark_dirty(bitmap_layer_get_layer(batt_layer));
+    last_batt_level = new_batt_level;
+  }
 }
 
 // Draw dates for a single week in the calendar

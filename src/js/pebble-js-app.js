@@ -335,9 +335,6 @@ function fetchWeather(loc) {
   var country, city, woeid, unit, status;
   var reqLoc = new XMLHttpRequest();
   var reqWeather = new XMLHttpRequest();
-  // URL for getting our WOEID from our current Lat/Long position in JSON format
-  reqLoc.open('GET', 'http://query.yahooapis.com/v1/public/yql?q=select%20*%20from%20geo.placefinder%20where%20text%3D%22' + 
-               encodeURIComponent(loc) + '%22%20and%20gflags%3D%22R%22&format=json', true);
   
   reqLoc.onload = function(e) {
     if (reqLoc.readyState == 4) {
@@ -351,32 +348,14 @@ function fetchWeather(loc) {
           country = location.countrycode;
           city = location.city;
           woeid = location.woeid;
-          if (DEBUG) {
-            console.log('Country: ' + country);
-            console.log('City: ' + city);
-            console.log('WOEID: ' + woeid);
+          
+          if (!cfgUseGPS) {
+            localStorage.woeid = woeid;
+            localStorage.city = city;
+            localStorage.country = country;
           }
           
-          locChanged = (woeid != lastWOEID);
-          lastWOEID = woeid;
-          
-          if (!cfgTempUnit || cfgTempUnit === '' || cfgTempUnit === 'Auto') {
-            // Determine temperature units from country code (US gets F, everyone else gets C)
-            if (country == 'US')
-              unit = 'F';
-            else
-              unit = 'C';
-          } else {
-            unit = cfgTempUnit;
-          }
-          
-          
-          if (DEBUG) console.log('Unit: ' + unit);
-          
-          // URL for getting basic weather forecast data in XML format (RSS)
-          reqWeather.open('GET', 'http://weather.yahooapis.com/forecastrss?w=' + woeid + '&u=' + unit.toLowerCase(), true);
-          // Fetch the weather data
-          reqWeather.send(null);
+          fetchWeatherData();
         } else {
           // WOEID not found
           Pebble.sendAppMessage({
@@ -391,6 +370,36 @@ function fetchWeather(loc) {
       }
     }
   };
+  
+  // Make HTTP call to get weather data
+  function fetchWeatherData() {
+    if (DEBUG) {
+      console.log('Fetching weather data...');
+      console.log('Country: ' + country);
+      console.log('City: ' + city);
+      console.log('WOEID: ' + woeid);
+    }
+    
+    locChanged = (woeid != lastWOEID);
+    lastWOEID = woeid;
+
+    if (!cfgTempUnit || cfgTempUnit === '' || cfgTempUnit === 'Auto') {
+      // Determine temperature units from country code (US gets F, everyone else gets C)
+      if (country == 'US')
+        unit = 'F';
+      else
+        unit = 'C';
+    } else {
+      unit = cfgTempUnit;
+    }
+
+    if (DEBUG) console.log('Unit: ' + unit);
+
+    // URL for getting basic weather forecast data in XML format (RSS)
+    reqWeather.open('GET', 'http://weather.yahooapis.com/forecastrss?w=' + woeid + '&u=' + unit.toLowerCase(), true);
+    // Fetch the weather data
+    reqWeather.send(null);
+  }
   
   reqWeather.onload = function(e) {
     if (reqWeather.readyState == 4) {
@@ -557,13 +566,27 @@ function fetchWeather(loc) {
     }
   };
   
-  // Get the WOEID for the current location, which will trigger the weather to be fetched
-  reqLoc.send(null);
+  if (!cfgUseGPS && localStorage.woeid && localStorage.city && localStorage.country) {
+    // If not using GPS and we have the details from the last location fetch, just fetch the weather
+    if (DEBUG) console.log("WOEID Stored - " + localStorage.woeid);
+    woeid = localStorage.woeid;
+    city = localStorage.city;
+    country = localStorage.country;
+    fetchWeatherData();
+  }
+  else {
+    if (DEBUG) console.log("Getting WOEID...");
+    // URL for getting our WOEID from our current Lat/Long or City position in JSON format
+    reqLoc.open('GET', 'http://query.yahooapis.com/v1/public/yql?q=select%20*%20from%20geo.placefinder%20where%20text%3D%22' + 
+                 encodeURIComponent(loc) + '%22%20and%20gflags%3D%22R%22&format=json', true);
+    reqLoc.send(null);
+  }
 }
 
 Pebble.addEventListener("ready",
                         function(e) {
                           if (DEBUG) console.log("JS Ready");
+                          //localStorage.clear();
                           loadSettings();
                         });
 
@@ -601,6 +624,9 @@ Pebble.addEventListener("webviewclosed",
                            if (e.response) {
                              var settings = JSON.parse(decodeURIComponent(e.response));
                              if (DEBUG) console.log("Settings returned: " + JSON.stringify(settings));
+                             localStorage.removeItem("woeid");
+                             localStorage.removeItem("city");
+                             localStorage.removeItem("country");
                              saveSettings(settings);
                            }
                            else {

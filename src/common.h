@@ -9,6 +9,15 @@
 #define MyTupletCString(_key, _cstring) \
 ((const Tuplet) { .type = TUPLE_CSTRING, .key = _key, .cstring = { .data = _cstring, .length = strlen(_cstring) + 1 }})
 
+typedef enum batt_level {
+  BATT_NA,
+  BATT_CHARGING,
+  BATT_25,
+  BATT_50,
+  BATT_75,
+  BATT_100
+} batt_level_t;
+  
 typedef struct savedata {
     uint8_t icon;
     char status[50];
