@@ -536,7 +536,8 @@ static void handle_batt_update(BatteryChargeState batt_status) {
         batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_75);
         break;
       case BATT_100:
-        batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_25);
+        batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_100);
+        break;
       case BATT_NA:
         batt_icon = NULL;
     }
