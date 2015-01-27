@@ -4,6 +4,8 @@
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
 #define SAVE_VER 1
+#define MAX_RETRIES 3
+#define RETRY_INTERVAL 5000
   
 static Window *window;
 
@@ -60,6 +62,9 @@ static int prev_daytime = 99;
 static bool force_sun_update = false;
 static int sun_update_count = 0;
 static bool last_error = false;
+static char err_msg[50] = "";
+static uint8_t retry_count = 0;
+static AppTimer *retry_timer = NULL;
 static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
 
@@ -113,6 +118,42 @@ static const uint32_t WEATHER_ICONS[] = {
   RESOURCE_ID_IMAGE_HURRICANE //18
 };
 
+// Procedure that sends the Pebble 12/24hr setting to the Phone and initializes the first weather call
+static void init_weather(void) {  
+  Tuplet values[] = {
+    TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0)
+  };
+  
+  app_sync_set(&sync, values, 1);
+}
+
+// Procedure that triggers the weather data to update via Javascript
+static void update_weather(void) {
+  last_error = false;
+  text_layer_set_text(status_layer, "Fetching...");
+  
+  Tuplet values[] = {
+    TupletCString(WEATHER_CITY_KEY, "Fetching...")
+  };
+  
+  app_sync_set(&sync, values, 1);
+}
+
+// Timer event that fires after the app sync init to differentiate between
+// the tuple callback due to the init and the callback due to the first phone comm success
+static void handle_weatherinit_timer(void *data) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather init timer event fired");
+  loading = false;
+  weatherinit_timer = NULL;
+  init_weather();
+}
+
+// Timer event that retries updating the weather after an error
+static void handle_retry_timer(void *data) {
+  retry_timer = NULL;
+  update_weather();
+}
+
 // Timer event that shows status after displaying the City/Error for 5 seconds
 static void handle_status_timer(void *data) {
 #ifdef DEBUG
@@ -127,49 +168,53 @@ static void handle_status_timer(void *data) {
   }
   
   status_timer = NULL;
-  if (!loading) {
-    // Save weather data after initial call and after a brief delay since 
-    // writing is slow and can interfere with other things
-
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Saving weather data");
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Saving Current Temp: %s", s_savedata.curr_temp);
-    
-    persist_write_int(SAVE_VER_KEY, SAVE_VER);
-    persist_write_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
-  }
-}
-
-// Timer event that fires after the initial tuple callback below
-static void handle_weatherinit_timer(void *data) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather init timer event fired");
-  loading = false;
-  weatherinit_timer = NULL;
 }
 
 // App message communication error
 static void sync_error_callback(DictionaryResult dict_error, AppMessageResult app_message_error, void *context) {
   APP_LOG(APP_LOG_LEVEL_ERROR, "App Message Sync Error: %d", app_message_error);
   last_error = true;
+  bool retry = false;
+  
   if (dict_error == DICT_OK) {
     switch (app_message_error) {
       case APP_MSG_NOT_CONNECTED:
         if (bluetooth_connection_service_peek())
-          strncpy(s_savedata.status, "Run phone app", sizeof(s_savedata.status));
+          strncpy(err_msg, "Run phone app", sizeof(err_msg));
         else
-          strncpy(s_savedata.status, "BT not conn.", sizeof(s_savedata.status));
+          strncpy(err_msg, "BT not conn.", sizeof(err_msg));
         break;
       case APP_MSG_SEND_TIMEOUT:
-        strncpy(s_savedata.status, "Comm Timeout", sizeof(s_savedata.status));
+        strncpy(err_msg, "Comm Timeout", sizeof(err_msg));
+        retry = true;
+        break;
+      case APP_MSG_BUSY:
+        strncpy(err_msg, "Comm Busy", sizeof(err_msg));
+        retry = true;
+        break;
+      case APP_MSG_BUFFER_OVERFLOW:
+        strncpy(err_msg, "Comm Overflow", sizeof(err_msg));
         break;
       default:
-        snprintf(s_savedata.status, sizeof(s_savedata.status), "Comm error:%d", app_message_error);
+        snprintf(err_msg, sizeof(err_msg), "Comm error:%d", app_message_error);
     }
     
   } else {
-    snprintf(s_savedata.status, sizeof(s_savedata.status), "Data error:%d", dict_error);
+    snprintf(err_msg, sizeof(s_savedata.status), "Data error:%d", dict_error);
   }
   
-  text_layer_set_text(status_layer, s_savedata.status);
+  text_layer_set_text(status_layer, err_msg);
+  
+  if (retry) {
+    // If there is a possibility that retrying may succeed, try updating the weather
+    // in RETRY_INTERVAL milliseconds
+    if (++retry_count <= MAX_RETRIES) {
+      if (retry_timer == NULL)
+        app_timer_register(RETRY_INTERVAL, handle_retry_timer, NULL);
+      else
+        app_timer_reschedule(retry_timer, RETRY_INTERVAL);
+    }
+  }
 }
 
 static void update_sun_layer(struct tm *t) {
@@ -286,6 +331,10 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       strncpy(s_savedata.curr_temp, new_tuple->value->cstring, sizeof(s_savedata.curr_temp));
       text_layer_set_text(curr_temp_layer, s_savedata.curr_temp);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Displaying Current Temp: %s", s_savedata.curr_temp);
+      // Assume receiving this data means the weather data was successfully fetched, so reset error retry 
+      // counter and stop any retry
+      retry_count = 0;
+      if (retry_timer != NULL) app_timer_cancel(retry_timer);
       break;
     case WEATHER_FORECAST_DAY_KEY:
       strncpy(s_savedata.forecast_day, new_tuple->value->cstring, sizeof(s_savedata.forecast_day));
@@ -373,27 +422,6 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Unknown App Message Key: %d", (int)key);
       break;
   }
-}
-
-// Procedure that triggers the weather data to update via Javascript
-static void update_weather(void) {
-  last_error = false;
-  text_layer_set_text(status_layer, "Fetching...");
-  
-  Tuplet values[] = {
-    TupletCString(WEATHER_CITY_KEY, "Fetching...")
-  };
-  
-  app_sync_set(&sync, values, 1);
-}
-
-// Procedure that sends the Pebble 12/24hr setting to the Phone and initializes the first weather call
-static void init_weather(void) {  
-  Tuplet values[] = {
-    TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0)
-  };
-  
-  app_sync_set(&sync, values, 1);
 }
 
 // Handle clock change events
@@ -893,14 +921,18 @@ static void window_load(Window *window) {
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
       sync_tuple_changed_callback, sync_error_callback, NULL);
   
-  // Trigger first weather update (also sends 12/24hr setting to phone)
-  init_weather();
-  
-  // Fire timer 2 seconds after the app_sync_init to mark everything as loaded once the initial tuple callback is done
+  // Fire timer 2 seconds after the app_sync_init to mark everything 
+  // as loaded once the initial tuple callback is done and init the first real weather update
   weatherinit_timer = app_timer_register(2000, handle_weatherinit_timer, NULL);
 }
 
 static void window_unload(Window *window) {
+  // Save last weather data is we got past the initial loading stage
+  if (!loading) {
+    persist_write_int(SAVE_VER_KEY, SAVE_VER);
+    persist_write_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
+  }
+  
   // Release event based resources
   app_sync_deinit(&sync);
   
