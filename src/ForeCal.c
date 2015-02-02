@@ -209,6 +209,7 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
     // If there is a possibility that retrying may succeed, try updating the weather
     // in RETRY_INTERVAL milliseconds
     if (++retry_count <= MAX_RETRIES) {
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather fetch retry: %d", retry_count);
       if (retry_timer == NULL)
         app_timer_register(RETRY_INTERVAL, handle_retry_timer, NULL);
       else
@@ -474,7 +475,7 @@ static void update_bt_icon(bool connected) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
     layer_set_hidden(bitmap_layer_get_layer(bt_layer), true);
     
-    if (s_savedata.bt_vibes) {
+    if (!loading && s_savedata.bt_vibes) {
       // Play long vibe pattern on BT disconnect
       VibePattern pat = {
         .durations = bt_warn_pattern,
@@ -483,6 +484,7 @@ static void update_bt_icon(bool connected) {
       vibes_enqueue_custom_pattern(pat);
     }
   }
+  layer_mark_dirty(current_layer);
 }
 
 // Handle Bluetooth disconnect timer to show disconnect after 15 seconds
@@ -637,12 +639,18 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   int prev_mon_len = 31 - ((prev_mon == 2) ? (3 - leap_year) : ((prev_mon - 1) % 7 % 2));
   int curr_mon_len = 31 - ((curr_mon == 2) ? (3 - leap_year) : ((curr_mon - 1) % 7 % 2));
   
+  // If the current week day is before the calendar week start day, push the dates down by 1 more week
+  int extra_offset = (t->tm_wday < s_savedata.startday) ? -7 : 0;
+  
   // Draw previous week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + s_savedata.startday + s_savedata.cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 7);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + s_savedata.startday + s_savedata.cal_offset + extra_offset, 
+                      curr_mon_len, prev_mon_len, GColorWhite, 7);
   // Draw current week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + s_savedata.startday + s_savedata.cal_offset, curr_mon_len, prev_mon_len, GColorBlack, 19);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + s_savedata.startday + s_savedata.cal_offset + extra_offset, 
+                      curr_mon_len, prev_mon_len, GColorBlack, 19);
   // Draw next week dates
-  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + s_savedata.startday + s_savedata.cal_offset, curr_mon_len, prev_mon_len, GColorWhite, 31);
+  cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + s_savedata.startday + s_savedata.cal_offset + extra_offset, 
+                      curr_mon_len, prev_mon_len, GColorWhite, 31);
   
   // Invert current date colors to highlight it
   int curr_day = (t->tm_wday + 7 - s_savedata.startday) % 7;

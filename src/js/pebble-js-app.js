@@ -610,7 +610,7 @@ Pebble.addEventListener("appmessage",
 Pebble.addEventListener("showConfiguration", 
                          function() {
                            if (DEBUG) console.log("Showing Settings...");
-                           var settingsURL = 'http://www.cpinkney.net/ForeCal/Settings-1_5.html?ColorScheme=' + cfgColorScheme + '&ForecastHour=' + cfgForecastHour +
+                           var settingsURL = 'http://www.cpinkney.net/ForeCal/Settings-1_10.html?ColorScheme=' + cfgColorScheme + '&ForecastHour=' + cfgForecastHour +
                                          '&ForecastMin=' + cfgForecastMin + '&UseGPS=' + cfgUseGPS + '&WeatherLoc=' + encodeURIComponent(cfgWeatherLoc) + '&TempUnit=' + cfgTempUnit +
                                          '&UpdateInterval=' + cfgUpdateInterval + '&FirstDay=' + cfgFirstDay + '&CalOffset=' + cfgCalOffset +
                                          '&ShowBT=' + cfgShowBT + '&BTVibes=' + cfgBTVibes + '&ShowBatt=' + cfgShowBatt;
