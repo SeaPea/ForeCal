@@ -5,6 +5,7 @@
 #define SAVE_VER_KEY 99
 #define SAVE_VER 1
 #define MAX_RETRIES 3
+#define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
   
 static Window *window;
@@ -64,6 +65,7 @@ static int sun_update_count = 0;
 static bool last_error = false;
 static char err_msg[50] = "";
 static uint8_t retry_count = 0;
+static uint8_t retry_count_hourly = 0;
 static AppTimer *retry_timer = NULL;
 static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
@@ -208,7 +210,7 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
   if (retry) {
     // If there is a possibility that retrying may succeed, try updating the weather
     // in RETRY_INTERVAL milliseconds
-    if (++retry_count <= MAX_RETRIES) {
+    if (++retry_count <= MAX_RETRIES && ++retry_count_hourly <= MAX_RETRIES_HOURLY) {
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather fetch retry: %d", retry_count);
       if (retry_timer == NULL)
         app_timer_register(RETRY_INTERVAL, handle_retry_timer, NULL);
@@ -439,6 +441,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   }
   if ((units_changed & HOUR_UNIT) != 0) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Hour changed");
+    retry_count_hourly = 0;
     if (clock_is_24h_style()) {
       text_layer_set_text(pm_layer, "");
     }

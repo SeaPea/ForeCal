@@ -170,10 +170,11 @@
             }
         ]
     },
+    "sdkVersion": "2",
     "shortName": "ForeCal",
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
     "versionCode": 2,
-    "versionLabel": "1.10",
+    "versionLabel": "1.11",
     "watchapp": {
         "watchface": true
     }
