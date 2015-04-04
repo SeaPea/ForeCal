@@ -272,6 +272,15 @@ function parseTime(timeStr) {
     return dt;
 }
 
+// Decode entities in XML text
+function decodeXML(xmlText) {
+    if (new RegExp(/&amp;|&lt;|&gt;|&quot;|&apos;|&#39;/).test(xmlText)) {
+        return xmlText.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;|&apos;/g, "'");
+    } else {
+      return xmlText;
+    }
+}
+
 // (Very) Rudementary XML parser for getting a specified attribute value of given XML tag
 // (This has to be done as there is no 'document' object in this Javascript environment)
 function getXmlAttrVal(xml, tag, attrName) {
@@ -279,7 +288,7 @@ function getXmlAttrVal(xml, tag, attrName) {
   var parts = re.exec(xml);
   
   if (parts && parts.length == 3)
-    return parts[2];
+    return decodeXML(parts[2]);
   else
     return '';
 }
@@ -341,20 +350,29 @@ function fetchWeather(loc) {
       if(reqLoc.status == 200) {
         //console.log(reqLoc.responseText);
         var response = JSON.parse(reqLoc.responseText);
-        if (response && response.query && response.query.results && response.query.results.Result && 
-            response.query.results.Result.woeid && response.query.results.Result.woeid !== '') {
+        var location = null;
+        if (response && response.query && response.query.results && response.query.results.Result) { 
+          if (response.query.results.Result.woeid && response.query.results.Result.woeid !== '') {
+            // Single location result
+            location = response.query.results.Result;
+          } else if (response.query.results.Result[0].woeid && response.query.results.Result[0].woeid !== '') {
+            // Pick the first result when there are multiple results
+            location = response.query.results.Result[0];
+          }
+        }
+        
+        if (location) {
           // Successfully found our WOEID, so now we can trigger the fetch of the weather data
-          var location = response.query.results.Result;
           country = location.countrycode;
-          city = location.city;
+          city = decodeXML(location.city);
           woeid = location.woeid;
-          
+
           if (!cfgUseGPS) {
             localStorage.woeid = woeid;
             localStorage.city = city;
             localStorage.country = country;
           }
-          
+
           fetchWeatherData();
         } else {
           // WOEID not found
@@ -436,11 +454,9 @@ function fetchWeather(loc) {
             if (!isNaN(sunrise) && !isNaN(sunset)) {
               if (curr_time >= sunset || curr_time < sunrise) {
                 // Nighttime
-                //sun_rise_set = sunrise.getHours() + ':' + (sunrise.getMinutes() < 10 ? '0' : '') + sunrise.getMinutes();
                 daymode = 0;
               } else {
                 // Daytime
-                //sun_rise_set = sunset.getHours() + ':' + (sunset.getMinutes() < 10 ? '0' : '') + sunset.getMinutes();
                 daymode = 1;
               }
             }
