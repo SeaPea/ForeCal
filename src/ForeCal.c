@@ -1,5 +1,6 @@
 #include "pebble.h"
 #include "common.h"
+#include "effect_layer.h"
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
@@ -43,9 +44,8 @@ static BitmapLayer *sun_layer;
 static GBitmap *sun_bitmap = NULL;
 
 static Layer *cal_layer = NULL;
-static InverterLayer *curr_date_layer = NULL;
 
-static InverterLayer *daymode_layer = NULL;
+static EffectLayer *daymode_layer = NULL;
 
 static const uint32_t bt_warn_pattern[] = { 1000, 500, 1000 };
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
@@ -117,7 +117,8 @@ static const uint32_t WEATHER_ICONS[] = {
   RESOURCE_ID_IMAGE_STORM, //15
   RESOURCE_ID_IMAGE_LIGHTSNOW, //16
   RESOURCE_ID_IMAGE_HOT, //17
-  RESOURCE_ID_IMAGE_HURRICANE //18
+  RESOURCE_ID_IMAGE_HURRICANE, //18
+  RESOURCE_ID_IMAGE_THUNDERSHOWERS //19
 };
 
 // Procedure that sends the Pebble 12/24hr setting to the Phone and initializes the first weather call
@@ -279,7 +280,7 @@ static void update_sun_layer(struct tm *t) {
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", s_savedata.sun_rise_set);
       
       if (s_savedata.auto_daymode) 
-        layer_set_hidden(inverter_layer_get_layer(daymode_layer), !daytime);
+        layer_set_hidden(effect_layer_get_layer(daymode_layer), !daytime);
       
       bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
       text_layer_set_text(sun_rise_set_layer, s_savedata.sun_rise_set);
@@ -359,7 +360,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_DAYMODE_KEY:
       s_savedata.daymode = (new_tuple->value->uint8 == 1);
-      layer_set_hidden(inverter_layer_get_layer(daymode_layer), !s_savedata.daymode);
+      layer_set_hidden(effect_layer_get_layer(daymode_layer), !s_savedata.daymode);
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_RISE_HOUR_KEY:
@@ -582,10 +583,11 @@ static void handle_batt_update(BatteryChargeState batt_status) {
 }
 
 // Draw dates for a single week in the calendar
-static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len, int prev_mon_len, GColor font_color, int ypos) {
+static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len, int prev_mon_len, GColor font_color, int ypos, int highlight_day) {
   
   int curr_date;
   char curr_date_str[3];
+  GColor back_color;
   
   graphics_context_set_text_color(ctx, font_color);
   
@@ -598,10 +600,37 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
     else
       curr_date = start_date + d;
     
+    if (curr_date == highlight_day) {
+      // invert the highlghted date (use subtle back color on color Pebbles)
+      if (gcolor_equal(font_color, GColorBlack)) {
+        if (layer_get_hidden(effect_layer_get_layer(daymode_layer))) { 
+          back_color = COLOR_FALLBACK(GColorDukeBlue, GColorBlack);
+          graphics_context_set_text_color(ctx, GColorWhite);
+        } else {
+          back_color = COLOR_FALLBACK(GColorCyan, GColorBlack);
+          graphics_context_set_text_color(ctx, GColorWhite);
+        }
+      } else {
+        if (layer_get_hidden(effect_layer_get_layer(daymode_layer))) {
+          back_color = COLOR_FALLBACK(GColorCyan, GColorWhite);
+          graphics_context_set_text_color(ctx, GColorBlack);
+        } else {
+          back_color = COLOR_FALLBACK(GColorDukeBlue, GColorWhite);
+          graphics_context_set_text_color(ctx, GColorBlack);
+        }
+      }
+      
+      graphics_context_set_fill_color(ctx, back_color);
+      graphics_fill_rect(ctx, GRect((d * 20) + d, ypos + 4, 19, 11), 0, GCornerNone);
+      
+    }
+    
     // Draw the date text in the correct calendar cell
     snprintf(curr_date_str, 3, "%d", curr_date);
     graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 
                        GRect((d * 20) + d, ypos, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    
+    if (curr_date == highlight_day) graphics_context_set_text_color(ctx, font_color);
   }
 }
 
@@ -611,10 +640,27 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, GRect(0, 0, 144, 46), 0, GCornerNone);
   
-  // Paint inverted rows background
+  int rowtexttop1;
+  int rowtexttop2;
+  int rowtexttop3;
+  
+  // Paint inverted rows background (Pebble Times have rounded corners so need to draw calendar more compact)
   graphics_context_set_fill_color(ctx, GColorBlack);
   graphics_fill_rect(ctx, GRect(0, 11, 144, 11), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
+  switch (watch_info_get_model()) {
+    case WATCH_INFO_MODEL_PEBBLE_TIME:
+    case WATCH_INFO_MODEL_PEBBLE_TIME_STEEL:
+      graphics_fill_rect(ctx, GRect(0, 33, 144, 13), 0, GCornerNone);
+      rowtexttop1 = 7;
+      rowtexttop2 = 18;
+      rowtexttop3 = 29;
+      break;
+    default:
+      graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
+      rowtexttop1 = 7;
+      rowtexttop2 = 19;
+      rowtexttop3 = 31;
+  }
   
   // Get current time
   struct tm *t;
@@ -647,17 +693,13 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   
   // Draw previous week dates
   cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday - 7 + s_savedata.startday + s_savedata.cal_offset + extra_offset, 
-                      curr_mon_len, prev_mon_len, GColorWhite, 7);
+                      curr_mon_len, prev_mon_len, GColorWhite, rowtexttop1, t->tm_mday);
   // Draw current week dates
   cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + s_savedata.startday + s_savedata.cal_offset + extra_offset, 
-                      curr_mon_len, prev_mon_len, GColorBlack, 19);
+                      curr_mon_len, prev_mon_len, GColorBlack, rowtexttop2, t->tm_mday);
   // Draw next week dates
   cal_week_draw_dates(ctx, t->tm_mday - t->tm_wday + 7 + s_savedata.startday + s_savedata.cal_offset + extra_offset, 
-                      curr_mon_len, prev_mon_len, GColorWhite, 31);
-  
-  // Invert current date colors to highlight it
-  int curr_day = (t->tm_wday + 7 - s_savedata.startday) % 7;
-  layer_set_frame(inverter_layer_get_layer(curr_date_layer), GRect((curr_day  * 20) + curr_day, 23 - ((s_savedata.cal_offset/7)*11), 19, 11));
+                      curr_mon_len, prev_mon_len, GColorWhite, rowtexttop3, t->tm_mday);
 }
 
 static void window_load(Window *window) {
@@ -883,14 +925,13 @@ static void window_load(Window *window) {
   // Setup 3 week calendar layer
   cal_layer = layer_create(GRect(0, 122, 144, 47));
   layer_add_child(window_layer, cal_layer);
-  curr_date_layer = inverter_layer_create(GRect(0, 23, 19, 11));
-  layer_add_child(cal_layer, inverter_layer_get_layer(curr_date_layer));
   
   layer_set_update_proc(cal_layer, cal_layer_draw);
   
-  daymode_layer = inverter_layer_create(GRect(0, 0, 144, 168));
-  layer_set_hidden(inverter_layer_get_layer(daymode_layer), s_savedata.daymode);
-  layer_add_child(window_layer, inverter_layer_get_layer(daymode_layer));
+  daymode_layer = effect_layer_create(GRect(0, 0, 144, 168));
+  effect_layer_add_effect(daymode_layer, effect_invert_bw_only, NULL);
+  layer_set_hidden(effect_layer_get_layer(daymode_layer), s_savedata.daymode);
+  layer_add_child(window_layer, effect_layer_get_layer(daymode_layer));
   
   // Get current time
   struct tm *t;
@@ -989,16 +1030,14 @@ static void window_unload(Window *window) {
   bitmap_layer_destroy(sun_layer);
   layer_destroy(forecast_layer);
   
-  inverter_layer_destroy(curr_date_layer);
   layer_destroy(cal_layer);
   
-  inverter_layer_destroy(daymode_layer);
+  effect_layer_destroy(daymode_layer);
 }
 
 static void init(void) {
   window = window_create();
   window_set_background_color(window, GColorBlack);
-  window_set_fullscreen(window, true);
   window_set_window_handlers(window, (WindowHandlers) {
     .load = window_load,
     .unload = window_unload

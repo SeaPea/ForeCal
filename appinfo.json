@@ -34,6 +34,26 @@
     "resources": {
         "media": [
             {
+                "file": "images/Thundershowers.png",
+                "name": "IMAGE_THUNDERSHOWERS",
+                "type": "png"
+            },
+            {
+                "file": "images/Storm.png",
+                "name": "IMAGE_STORM",
+                "type": "png"
+            },
+            {
+                "file": "images/Rain.png",
+                "name": "IMAGE_RAIN",
+                "type": "png"
+            },
+            {
+                "file": "images/Drizzle.png",
+                "name": "IMAGE_DRIZZLE",
+                "type": "png"
+            },
+            {
                 "file": "images/Hurricane.png",
                 "name": "IMAGE_HURRICANE",
                 "type": "png"
@@ -46,11 +66,6 @@
             {
                 "file": "images/LightSnow.png",
                 "name": "IMAGE_LIGHTSNOW",
-                "type": "png"
-            },
-            {
-                "file": "images/Storm.png",
-                "name": "IMAGE_STORM",
                 "type": "png"
             },
             {
@@ -76,16 +91,6 @@
             {
                 "file": "images/Hail.png",
                 "name": "IMAGE_HAIL",
-                "type": "png"
-            },
-            {
-                "file": "images/Rain.png",
-                "name": "IMAGE_RAIN",
-                "type": "png"
-            },
-            {
-                "file": "images/Drizzle.png",
-                "name": "IMAGE_DRIZZLE",
                 "type": "png"
             },
             {
@@ -170,11 +175,14 @@
             }
         ]
     },
-    "sdkVersion": "2",
+    "sdkVersion": "3",
     "shortName": "ForeCal",
+    "targetPlatforms": [
+        "aplite",
+        "basalt"
+    ],
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
-    "versionCode": 2,
-    "versionLabel": "1.12",
+    "versionLabel": "2.0",
     "watchapp": {
         "watchface": true
     }

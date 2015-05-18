@@ -202,8 +202,6 @@ function iconFromWeatherId(weatherId) {
       return 5; //Low Visility
     case '4':  //thunderstorms
     case '37': //isolated thunderstorms
-    case '45': //thundershowers
-    case '47': //isolated thundershowers
       return 6; //Isolated Thunderstorms
     case '3':  //severe thunderstorms
     case '38': //scattered thunderstorms
@@ -245,6 +243,9 @@ function iconFromWeatherId(weatherId) {
       return 17; //Hot
     case '2':  //hurricane
       return 18; //Hurricane
+    case '45': //thundershowers
+    case '47': //isolated thundershowers
+      return 19; // Thundershowers
     default:
       return 0; // N/A
   }
