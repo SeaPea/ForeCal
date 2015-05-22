@@ -46,6 +46,7 @@ static GBitmap *sun_bitmap = NULL;
 static Layer *cal_layer = NULL;
 
 static EffectLayer *daymode_layer = NULL;
+static EffectLayer *brightness_inverter = NULL;
 
 static const uint32_t bt_warn_pattern[] = { 1000, 500, 1000 };
 static char *weekdays[7] = {"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"};
@@ -221,6 +222,11 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
   }
 }
 
+static void set_daymode(bool daymode_on) {
+  layer_set_hidden(effect_layer_get_layer(daymode_layer), !daymode_on);
+  layer_set_hidden(effect_layer_get_layer(brightness_inverter), !daymode_on);
+}
+
 static void update_sun_layer(struct tm *t) {
   if (s_savedata.sun_rise_hour != 99 && s_savedata.sun_rise_min != 99 && 
       s_savedata.sun_set_hour != 99 && s_savedata.sun_set_min != 99) {
@@ -279,8 +285,10 @@ static void update_sun_layer(struct tm *t) {
 
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Sun rise/set time: %s", s_savedata.sun_rise_set);
       
-      if (s_savedata.auto_daymode) 
-        layer_set_hidden(effect_layer_get_layer(daymode_layer), !daytime);
+      if (s_savedata.auto_daymode) {
+        s_savedata.daymode = daytime;
+        set_daymode(daytime);
+      }
       
       bitmap_layer_set_bitmap(sun_layer, sun_bitmap);
       text_layer_set_text(sun_rise_set_layer, s_savedata.sun_rise_set);
@@ -360,7 +368,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case WEATHER_DAYMODE_KEY:
       s_savedata.daymode = (new_tuple->value->uint8 == 1);
-      layer_set_hidden(effect_layer_get_layer(daymode_layer), !s_savedata.daymode);
+      set_daymode(s_savedata.daymode);
       update_sun_layer(NULL);
       break;
     case WEATHER_SUN_RISE_HOUR_KEY:
@@ -604,7 +612,7 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
       // invert the highlghted date (use subtle back color on color Pebbles)
       if (gcolor_equal(font_color, GColorBlack)) {
         if (layer_get_hidden(effect_layer_get_layer(daymode_layer))) { 
-          back_color = COLOR_FALLBACK(GColorDukeBlue, GColorBlack);
+          back_color = COLOR_FALLBACK(GColorCobaltBlue, GColorBlack);;
           graphics_context_set_text_color(ctx, GColorWhite);
         } else {
           back_color = COLOR_FALLBACK(GColorCyan, GColorBlack);
@@ -821,7 +829,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
   
-  bt_layer = bitmap_layer_create(GRect(129, 1, 9, 16));
+  bt_layer = bitmap_layer_create(GRect(128, 0, 11, 18));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
   bitmap_layer_set_bitmap(bt_layer, bt_icon);
   update_bt_icon(bluetooth_connection_service_peek());
@@ -930,8 +938,13 @@ static void window_load(Window *window) {
   
   daymode_layer = effect_layer_create(GRect(0, 0, 144, 168));
   effect_layer_add_effect(daymode_layer, effect_invert_bw_only, NULL);
-  layer_set_hidden(effect_layer_get_layer(daymode_layer), s_savedata.daymode);
+  
+  brightness_inverter = effect_layer_create(GRect(128, 0, 11, 18));
+  effect_layer_add_effect(brightness_inverter, effect_invert_brightness, NULL);
+  set_daymode(s_savedata.daymode);
+  
   layer_add_child(window_layer, effect_layer_get_layer(daymode_layer));
+  layer_add_child(window_layer, effect_layer_get_layer(brightness_inverter));
   
   // Get current time
   struct tm *t;
@@ -1033,6 +1046,7 @@ static void window_unload(Window *window) {
   layer_destroy(cal_layer);
   
   effect_layer_destroy(daymode_layer);
+  effect_layer_destroy(brightness_inverter);
 }
 
 static void init(void) {
