@@ -939,7 +939,7 @@ static void window_load(Window *window) {
   daymode_layer = effect_layer_create(GRect(0, 0, 144, 168));
   effect_layer_add_effect(daymode_layer, effect_invert_bw_only, NULL);
   
-  brightness_inverter = effect_layer_create(GRect(128, 0, 11, 18));
+  brightness_inverter = effect_layer_create(GRect(126, 0, 16, 26));
   effect_layer_add_effect(brightness_inverter, effect_invert_brightness, NULL);
   set_daymode(s_savedata.daymode);
   

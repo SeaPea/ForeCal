@@ -359,7 +359,7 @@ void effect_invert_brightness(GContext* ctx,  GRect position, void* param) {
            else if (gcolor_equal(pixel, GColorShockingPink))
              pixel_new = GColorPurple;
            else if (gcolor_equal(pixel, GColorChromeYellow))
-             pixel_new = GColorYellow ;
+             pixel_new = GColorWindsorTan;
            else if (gcolor_equal(pixel, GColorRajah))
              pixel_new = GColorOrange;
            else if (gcolor_equal(pixel, GColorMelon))
