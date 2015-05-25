@@ -40,4 +40,7 @@ typedef struct savedata {
     bool show_bt;
     bool show_batt;
     bool bt_vibes;
+    uint8_t date_format;
+    bool show_wind;
+    char wind_speed[8];
  } __attribute__((__packed__)) savedata_t;

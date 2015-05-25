@@ -6,6 +6,7 @@
         "city": 9,
         "condition": 7,
         "curr_temp": 1,
+        "date_format": 23,
         "daymode": 8,
         "first_day": 16,
         "forecast_day": 3,
@@ -15,6 +16,7 @@
         "low_temp": 5,
         "show_batt": 19,
         "show_bt": 18,
+        "show_wind": 24,
         "status": 0,
         "sun_rise_hour": 10,
         "sun_rise_min": 11,
@@ -22,7 +24,8 @@
         "sun_set_hour": 12,
         "sun_set_min": 13,
         "time_24hr": 20,
-        "update_interval": 15
+        "update_interval": 15,
+        "wind_speed": 25
     },
     "capabilities": [
         "location",
@@ -33,6 +36,12 @@
     "projectType": "native",
     "resources": {
         "media": [
+            {
+                "file": "images/ForeCal_MenuIcon.png",
+                "menuIcon": true,
+                "name": "IMAGE_MENUICON",
+                "type": "png"
+            },
             {
                 "file": "images/Thundershowers.png",
                 "name": "IMAGE_THUNDERSHOWERS",

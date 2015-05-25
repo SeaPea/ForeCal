@@ -4,7 +4,7 @@
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
-#define SAVE_VER 1
+#define SAVE_VER 2
 #define MAX_RETRIES 3
 #define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
@@ -24,6 +24,7 @@ static GBitmap *batt_icon = NULL;
 static BitmapLayer *batt_layer = NULL;
 
 static TextLayer *curr_temp_layer = NULL;
+static TextLayer *wind_speed_layer = NULL;
 
 static Layer *forecast_layer = NULL;
 static TextLayer *forecast_day_layer = NULL;
@@ -95,7 +96,10 @@ enum MessageKey {
   SHOW_BATT_KEY = 19,
   TIME_24HR_KEY = 20,
   LOC_CHANGED_KEY = 21,
-  BT_VIBES_KEY = 22
+  BT_VIBES_KEY = 22,
+  DATE_FORMAT_KEY = 23,
+  SHOW_WIND_KEY = 24,
+  WIND_SPEED_KEY = 25
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -306,6 +310,37 @@ static void update_sun_layer(struct tm *t) {
   }
 }
 
+// Updates the current date shown
+static void update_date(struct tm *t) {
+  
+  if (t == NULL) {
+    // Get current time if not passed in
+    time_t temp;
+    temp = time(NULL);
+    t = localtime(&temp);
+  }
+  
+  if (s_savedata.show_wind) {
+    // Hide day name if showing wind speed
+    if (s_savedata.date_format == 0)
+      // Month, Date
+      strftime(current_date, sizeof(current_date), "%b %d", t);
+    else
+      // Date, Month
+      strftime(current_date, sizeof(current_date), "%d %b", t);
+  } else {
+    // Show day name as well
+    if (s_savedata.date_format == 0)
+      // Month, Date
+      strftime(current_date, sizeof(current_date), "%a %b %d", t);
+    else
+      // Date, Month
+      strftime(current_date, sizeof(current_date), "%a %d %b", t);
+  }
+  
+  text_layer_set_text(date_layer, current_date);
+}
+
 // Event fired when data received from Javascript
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   //APP_LOG(APP_LOG_LEVEL_DEBUG, "Message Key: %d", (int)key);
@@ -430,6 +465,19 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         update_sun_layer(NULL);
       }
       break;
+    case DATE_FORMAT_KEY:
+      s_savedata.date_format = new_tuple->value->uint8;
+      update_date(NULL);
+      break;
+    case SHOW_WIND_KEY:
+      s_savedata.show_wind = (new_tuple->value->uint8 == 1);
+      layer_set_hidden(text_layer_get_layer(wind_speed_layer), !s_savedata.show_wind);
+      update_date(NULL);
+      break;
+    case WIND_SPEED_KEY:
+      strncpy(s_savedata.wind_speed, new_tuple->value->cstring, sizeof(s_savedata.wind_speed));
+      text_layer_set_text(wind_speed_layer, s_savedata.wind_speed);
+      break;
     default:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Unknown App Message Key: %d", (int)key);
       break;
@@ -465,8 +513,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   }
   if ((units_changed & DAY_UNIT) != 0) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Day changed");
-    strftime(current_date, sizeof(current_date), "%a %b %d", tick_time);
-    text_layer_set_text(date_layer, current_date);
+    update_date(tick_time);
     // Trigger redraw of calendar
     layer_mark_dirty(cal_layer);
   }
@@ -735,11 +782,27 @@ static void window_load(Window *window) {
   s_savedata.sun_set_min = 99;
   s_savedata.auto_daymode = true;
   s_savedata.update_interval = 20;
+  s_savedata.date_format = 0;
+  s_savedata.show_wind = false;
+  s_savedata.wind_speed[0] = '\0';
   
   if (persist_exists(SAVE_VER_KEY)) {
-    // Currently only one structure version, so no need to check at the moment
-    if (persist_exists(SAVEDATA_KEY))
-      persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
+    // Save version 2 added date_format, show_wind, wind_speed
+    if (persist_exists(SAVEDATA_KEY)) {
+      switch (persist_read_int(SAVE_VER_KEY)) {
+        case 1:
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - 
+                            (sizeof(s_savedata.date_format) + sizeof(s_savedata.show_wind) + sizeof(s_savedata.wind_speed)));
+          // Reinit the new settings just to be sure
+          s_savedata.date_format = 0;
+          s_savedata.show_wind = false;
+          s_savedata.wind_speed[0] = '\0';
+          break;
+        default:
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
+          break;
+      }
+    } 
   }
   else {
     if (persist_exists(SHOW_BT_KEY))
@@ -848,6 +911,15 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(curr_temp_layer, GTextAlignmentLeft);
   text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
+  
+  wind_speed_layer = text_layer_create(GRect(40, 34, 45, 26));
+  text_layer_set_text_color(wind_speed_layer, GColorWhite);
+  text_layer_set_background_color(wind_speed_layer, GColorClear);
+  text_layer_set_font(wind_speed_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+  text_layer_set_text_alignment(wind_speed_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(wind_speed_layer, GTextOverflowModeFill);
+  layer_set_hidden(text_layer_get_layer(wind_speed_layer), !s_savedata.show_wind);
+  layer_add_child(current_layer, text_layer_get_layer(wind_speed_layer));
   
   layer_add_child(window_layer, current_layer);
   
@@ -979,7 +1051,10 @@ static void window_load(Window *window) {
     TupletInteger(BT_VIBES_KEY, s_savedata.bt_vibes ? 1 : 0),
     TupletInteger(SHOW_BATT_KEY, s_savedata.show_batt ? 1 : 0),
     TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0),
-    TupletInteger(LOC_CHANGED_KEY, 0)
+    TupletInteger(LOC_CHANGED_KEY, 0),
+    TupletInteger(DATE_FORMAT_KEY, s_savedata.date_format),
+    TupletInteger(SHOW_WIND_KEY, s_savedata.show_wind ? 1 : 0),
+    MyTupletCString(WIND_SPEED_KEY, s_savedata.wind_speed)
   };
   
   // Initialize comms with phone
@@ -1027,6 +1102,7 @@ static void window_unload(Window *window) {
   text_layer_destroy(date_layer);
   text_layer_destroy(pm_layer);
   text_layer_destroy(curr_temp_layer);
+  text_layer_destroy(wind_speed_layer);
   text_layer_destroy(sun_rise_set_layer);
   bitmap_layer_destroy(bt_layer);
   bitmap_layer_destroy(batt_layer);
