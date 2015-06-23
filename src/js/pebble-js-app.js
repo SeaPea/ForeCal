@@ -1,5 +1,5 @@
 var DEBUG = false;
-var APP_VER = "v2.0";
+var APP_VER = "v2.1";
 var lastSuccess;
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
