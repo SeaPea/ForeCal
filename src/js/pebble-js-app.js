@@ -1,4 +1,4 @@
-var DEBUG = true;
+var DEBUG = false;
 var APP_VER = "v2.0";
 var lastSuccess;
 var daymode = 0;
@@ -91,7 +91,7 @@ function saveSettings() {
     daymode = 1;
   }
   
-  if (localStorage.config) {
+  if (saved) {
     if (saved.ColorScheme !== null) {
       if (saved.ColorScheme == 'Auto' && config.ColorScheme != 'Auto') refreshW = true;
     }
@@ -618,8 +618,12 @@ Pebble.addEventListener("webviewclosed",
                          function(e) {
                            if (DEBUG) console.log("Webview closed");
                            if (e.response) {
-                             config = JSON.parse(e.response);
                              if (DEBUG) console.log("Settings returned: " + e.response);
+                             try {
+                               config = JSON.parse(e.response);
+                             } catch(ex) {
+                               config = JSON.parse(decodeURIComponent(e.response));
+                             }
                              localStorage.removeItem("woeid");
                              localStorage.removeItem("city");
                              localStorage.removeItem("country");

@@ -865,6 +865,10 @@ static void window_load(Window *window) {
       s_savedata.update_interval = persist_read_int(WEATHER_UPDATE_INTERVAL_KEY);
   }
   
+  // Sanitize calendar parameters that somehow get messed up on some watches
+  if (s_savedata.startday > 1) s_savedata.startday = 0;
+  if (s_savedata.cal_offset != 0 && s_savedata.cal_offset != 7) s_savedata.cal_offset = 0;
+  
   // Setup 'current' layer (time, date, current temp, battery, bluetooth)
   current_layer = layer_create(GRect(0, 0, 144, 58));
   
