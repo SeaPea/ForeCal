@@ -691,6 +691,11 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
 
 // Handle drawing of the 3 week calendar layer
 static void cal_layer_draw(Layer *layer, GContext *ctx) {
+  
+  // Sanitize calendar parameters that somehow get messed up on some watches
+  if (s_savedata.startday > 1) s_savedata.startday = 0;
+  if (s_savedata.cal_offset != 0 && s_savedata.cal_offset != 7) s_savedata.cal_offset = 0;
+  
   // Paint calendar background
   graphics_context_set_fill_color(ctx, GColorWhite);
   graphics_fill_rect(ctx, GRect(0, 0, 144, 46), 0, GCornerNone);
@@ -864,10 +869,6 @@ static void window_load(Window *window) {
     if (persist_exists(WEATHER_UPDATE_INTERVAL_KEY))
       s_savedata.update_interval = persist_read_int(WEATHER_UPDATE_INTERVAL_KEY);
   }
-  
-  // Sanitize calendar parameters that somehow get messed up on some watches
-  if (s_savedata.startday > 1) s_savedata.startday = 0;
-  if (s_savedata.cal_offset != 0 && s_savedata.cal_offset != 7) s_savedata.cal_offset = 0;
   
   // Setup 'current' layer (time, date, current temp, battery, bluetooth)
   current_layer = layer_create(GRect(0, 0, 144, 58));

@@ -1,5 +1,5 @@
 var DEBUG = false;
-var APP_VER = "v2.1";
+var APP_VER = "v2.2";
 var lastSuccess;
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
@@ -28,12 +28,14 @@ function loadSettings() {
   
   if (DEBUG) console.log('Loading settings...');
   
-  if (localStorage.time24hr !== null) {
-    time24hr = (localStorage.time24hr == 'true');
+  if (localStorage.getItem('time24hr') !== null) {
+    time24hr = (localStorage.getItem('time24hr') == 'true');
   }
   
-  if (localStorage.config) {
-    config = JSON.parse(localStorage.config);
+  if (localStorage.getItem('config')) {
+    try {
+      config = JSON.parse(localStorage.getItem('config'));
+    } catch(ex) {}
   } else {
     if (localStorage.colorScheme !== null) {
       config.ColorScheme = localStorage.colorScheme;
@@ -80,10 +82,13 @@ function saveSettings() {
   
   var refreshW = false;
   
-  var saved = JSON.parse(localStorage.config);
-  localStorage.config = JSON.stringify(config);
+  var saved = null;
+  try {
+    if (localStorage.getItem('config')) saved = JSON.parse(localStorage.getItem('config'));
+  } catch(ex) {}
+  localStorage.setItem('config', JSON.stringify(config));
   
-  localStorage.time24Hr = time24hr;
+  localStorage.setItem('time24Hr', time24hr);
   
   if (config.ColorScheme == 'WhiteOnBlack') {
     daymode = 0;
@@ -110,6 +115,8 @@ function saveSettings() {
     if (saved.TempUnit !== null) {
       if (saved.TempUnit != config.TempUnit) refreshW = true;
     }
+  } else {
+    refreshW = true;
   }
   
   if (refreshW) {
