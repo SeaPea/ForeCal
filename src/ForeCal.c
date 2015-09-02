@@ -4,7 +4,7 @@
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
-#define SAVE_VER 2
+#define SAVE_VER 3
 #define MAX_RETRIES 3
 #define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
@@ -71,6 +71,7 @@ static uint8_t retry_count_hourly = 0;
 static AppTimer *retry_timer = NULL;
 static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
+static time_t last_update_attempt;
 
 // App Message Keys for Tuples transferred from Javascript
 enum MessageKey {
@@ -151,6 +152,7 @@ static void update_weather(void) {
 // the tuple callback due to the init and the callback due to the first phone comm success
 static void handle_weatherinit_timer(void *data) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather init timer event fired");
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Last Update: %ld", s_savedata.last_update);
   loading = false;
   weatherinit_timer = NULL;
   init_weather();
@@ -222,7 +224,11 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
         app_timer_register(RETRY_INTERVAL, handle_retry_timer, NULL);
       else
         app_timer_reschedule(retry_timer, RETRY_INTERVAL);
+    } else {
+      last_update_attempt = 0;
     }
+  } else {
+    last_update_attempt = 0;
   }
 }
 
@@ -382,6 +388,14 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       // counter and stop any retry
       retry_count = 0;
       if (retry_timer != NULL) app_timer_cancel(retry_timer);
+      // Record the time of the successful update as the time when the update started
+      if (last_update_attempt == 0) {
+        // If there is no update start time, use now (without seconds)
+        last_update_attempt = time(NULL);
+        last_update_attempt -= last_update_attempt % 60;
+      }
+      s_savedata.last_update = last_update_attempt;
+      last_update_attempt = 0;
       break;
     case WEATHER_FORECAST_DAY_KEY:
       strncpy(s_savedata.forecast_day, new_tuple->value->cstring, sizeof(s_savedata.forecast_day));
@@ -490,9 +504,14 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     clock_copy_time_string(current_time, sizeof(current_time));
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
-    if ((s_savedata.update_interval == 0 && tick_time->tm_min == 0) || 
-        tick_time->tm_min % s_savedata.update_interval == 0) {
-      update_weather(); // Update the weather every X minutes
+    // Update the weather every X minutes as long as it has been more than 5 minutes since the last update
+    if (((s_savedata.update_interval == 0 && tick_time->tm_min == 0) || 
+        tick_time->tm_min % s_savedata.update_interval == 0) &&
+        (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) > 300))) {
+      // Record the time when the update attempt started without seconds
+      last_update_attempt = time(NULL);
+      last_update_attempt -= last_update_attempt % 60;
+      update_weather(); 
     }
     update_sun_layer(tick_time);
   }
@@ -521,6 +540,9 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
 
 // Try updating the weather again after a delay when BT reconnects to give everything time to reopen
 static void handle_reconnect_delay(void *data) {
+  // Record the time when the update attempt started without seconds
+  last_update_attempt = time(NULL);
+  last_update_attempt -= last_update_attempt % 60;
   update_weather();
 }
 
@@ -790,19 +812,27 @@ static void window_load(Window *window) {
   s_savedata.date_format = 0;
   s_savedata.show_wind = false;
   s_savedata.wind_speed[0] = '\0';
+  s_savedata.last_update = 0;
   
   if (persist_exists(SAVE_VER_KEY)) {
     // Save version 2 added date_format, show_wind, wind_speed
+    // Save version 3 added last_update
     if (persist_exists(SAVEDATA_KEY)) {
       switch (persist_read_int(SAVE_VER_KEY)) {
         case 1:
           persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - 
-                            (sizeof(s_savedata.date_format) + sizeof(s_savedata.show_wind) + sizeof(s_savedata.wind_speed)));
+                            (sizeof(s_savedata.date_format) + sizeof(s_savedata.show_wind) + 
+                             sizeof(s_savedata.wind_speed) + sizeof(s_savedata.last_update)));
           // Reinit the new settings just to be sure
           s_savedata.date_format = 0;
           s_savedata.show_wind = false;
           s_savedata.wind_speed[0] = '\0';
+          s_savedata.last_update = 0;
           break;
+        case 2:
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - sizeof(s_savedata.last_update));
+          // Reinit the new settings just to be sure
+          s_savedata.last_update = 0;
         default:
           persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
           break;
@@ -1029,9 +1059,29 @@ static void window_load(Window *window) {
   temp = time(NULL);
   t = localtime(&temp);
   
+  // Temporarily disable update interval so that handle_tick doesn't trigger weather update
+  uint8_t interval = s_savedata.update_interval;
+  s_savedata.update_interval = 99;
+  
   // Init time and date
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
+  // Re-enable update interval
+  s_savedata.update_interval = interval;
+  
+  // Get minute components for current time and last update time
+  uint8_t current_mins = (temp / 60) % 60;
+  uint8_t last_update_mins = (s_savedata.last_update / 60) % 60;
+  
+  // If it has been longer than update_interval in minutes since last update or last update is not known
+  // or the last update and current time span an update internal and is more than 5 minutes ago
+  // then we need to run an update
+  bool need_update = (s_savedata.last_update == 0 || 
+      (temp - s_savedata.last_update) >= ((s_savedata.update_interval == 0 ? 60 : s_savedata.update_interval) * 60) ||
+      (((last_update_mins > current_mins) || 
+        (last_update_mins < s_savedata.update_interval && current_mins >= s_savedata.update_interval) ||
+        (last_update_mins < (s_savedata.update_interval*2) && current_mins >= (s_savedata.update_interval*2))) && 
+       ((temp - s_savedata.last_update) > 300) ));
   
   // Initialize weather data UI
   Tuplet initial_values[] = {
@@ -1043,7 +1093,7 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_ICON_KEY, s_savedata.icon),
     MyTupletCString(WEATHER_CONDITION_KEY, s_savedata.condition),
     TupletInteger(WEATHER_DAYMODE_KEY, s_savedata.daymode ? 1 : 0),
-    TupletCString(WEATHER_CITY_KEY, "Fetching..."),
+    TupletCString(WEATHER_CITY_KEY, (need_update ? "Fetching..." : s_savedata.city)), 
     TupletInteger(WEATHER_SUN_RISE_HOUR_KEY, s_savedata.sun_rise_hour),
     TupletInteger(WEATHER_SUN_RISE_MIN_KEY, s_savedata.sun_rise_min),
     TupletInteger(WEATHER_SUN_SET_HOUR_KEY, s_savedata.sun_set_hour),
@@ -1066,9 +1116,15 @@ static void window_load(Window *window) {
   app_sync_init(&sync, sync_buffer, sizeof(sync_buffer), initial_values, ARRAY_LENGTH(initial_values),
       sync_tuple_changed_callback, sync_error_callback, NULL);
   
-  // Fire timer 2 seconds after the app_sync_init to mark everything 
-  // as loaded once the initial tuple callback is done and init the first real weather update
-  weatherinit_timer = app_timer_register(2000, handle_weatherinit_timer, NULL);
+  if (need_update) {
+    last_update_attempt = temp - (temp % 60);
+    
+    // Fire timer 2 seconds after the app_sync_init to mark everything 
+    // as loaded once the initial tuple callback is done and init the first real weather update
+    weatherinit_timer = app_timer_register(2000, handle_weatherinit_timer, NULL);
+  } else {
+    loading = false;
+  }
 }
 
 static void window_unload(Window *window) {

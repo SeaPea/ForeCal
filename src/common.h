@@ -43,4 +43,5 @@ typedef struct savedata {
     uint8_t date_format;
     bool show_wind;
     char wind_speed[8];
+    time_t last_update;
  } __attribute__((__packed__)) savedata_t;
