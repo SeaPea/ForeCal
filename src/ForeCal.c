@@ -100,7 +100,8 @@ enum MessageKey {
   BT_VIBES_KEY = 22,
   DATE_FORMAT_KEY = 23,
   SHOW_WIND_KEY = 24,
-  WIND_SPEED_KEY = 25
+  WIND_SPEED_KEY = 25,
+  WEATHER_FETCHED_KEY = 99
 };
 
 // Weather icon resources defined in order to match Javascript icon values
@@ -384,18 +385,6 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       strncpy(s_savedata.curr_temp, new_tuple->value->cstring, sizeof(s_savedata.curr_temp));
       text_layer_set_text(curr_temp_layer, s_savedata.curr_temp);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Displaying Current Temp: %s", s_savedata.curr_temp);
-      // Assume receiving this data means the weather data was successfully fetched, so reset error retry 
-      // counter and stop any retry
-      retry_count = 0;
-      if (retry_timer != NULL) app_timer_cancel(retry_timer);
-      // Record the time of the successful update as the time when the update started
-      if (last_update_attempt == 0) {
-        // If there is no update start time, use now (without seconds)
-        last_update_attempt = time(NULL);
-        last_update_attempt -= last_update_attempt % 60;
-      }
-      s_savedata.last_update = last_update_attempt;
-      last_update_attempt = 0;
       break;
     case WEATHER_FORECAST_DAY_KEY:
       strncpy(s_savedata.forecast_day, new_tuple->value->cstring, sizeof(s_savedata.forecast_day));
@@ -492,6 +481,23 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       strncpy(s_savedata.wind_speed, new_tuple->value->cstring, sizeof(s_savedata.wind_speed));
       text_layer_set_text(wind_speed_layer, s_savedata.wind_speed);
       break;
+    case WEATHER_FETCHED_KEY:
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "WEATHER FETCHED: %d", new_tuple->value->uint8);
+      if (new_tuple->value->uint8 == 1) {
+        // On a successful retrieve reset error retry counter and stop any retry
+        retry_count = 0;
+        if (retry_timer != NULL) app_timer_cancel(retry_timer);
+        last_error = false;
+        
+        // Record the time of the successful update as the time when the update started
+        if (last_update_attempt == 0) {
+          // If there is no update start time, use now (without seconds)
+          last_update_attempt = time(NULL);
+          last_update_attempt -= last_update_attempt % 60;
+        }
+        s_savedata.last_update = last_update_attempt;
+      }
+      last_update_attempt = 0;
     default:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Unknown App Message Key: %d", (int)key);
       break;
@@ -1074,14 +1080,14 @@ static void window_load(Window *window) {
   uint8_t last_update_mins = (s_savedata.last_update / 60) % 60;
   
   // If it has been longer than update_interval in minutes since last update or last update is not known
-  // or the last update and current time span an update internal and is more than 5 minutes ago
+  // or the last update and current time span an update internal and is more than 10 minutes ago
   // then we need to run an update
   bool need_update = (s_savedata.last_update == 0 || 
       (temp - s_savedata.last_update) >= ((s_savedata.update_interval == 0 ? 60 : s_savedata.update_interval) * 60) ||
       (((last_update_mins > current_mins) || 
         (last_update_mins < s_savedata.update_interval && current_mins >= s_savedata.update_interval) ||
         (last_update_mins < (s_savedata.update_interval*2) && current_mins >= (s_savedata.update_interval*2))) && 
-       ((temp - s_savedata.last_update) > 300) ));
+       ((temp - s_savedata.last_update) > 600) ));
   
   // Initialize weather data UI
   Tuplet initial_values[] = {
@@ -1109,7 +1115,8 @@ static void window_load(Window *window) {
     TupletInteger(LOC_CHANGED_KEY, 0),
     TupletInteger(DATE_FORMAT_KEY, s_savedata.date_format),
     TupletInteger(SHOW_WIND_KEY, s_savedata.show_wind ? 1 : 0),
-    MyTupletCString(WIND_SPEED_KEY, s_savedata.wind_speed)
+    MyTupletCString(WIND_SPEED_KEY, s_savedata.wind_speed),
+    TupletInteger(WEATHER_FETCHED_KEY, 0)
   };
   
   // Initialize comms with phone

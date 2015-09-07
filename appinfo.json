@@ -25,6 +25,7 @@
         "sun_set_min": 13,
         "time_24hr": 20,
         "update_interval": 15,
+        "weather_fetched": 99,
         "wind_speed": 25
     },
     "capabilities": [

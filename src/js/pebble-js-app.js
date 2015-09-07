@@ -1,6 +1,5 @@
 var DEBUG = false;
-var APP_VER = "v2.2";
-var lastSuccess;
+var APP_VER = "v2.3";
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 var lastWOEID = 0;
@@ -146,7 +145,8 @@ function saveSettings() {
       "bt_vibes":(config.BTVibes === true) ? 1 : 0,
       "show_batt":(config.ShowBatt === true) ? 1 : 0,
       "date_format":config.DateFormat,
-      "show_wind":(config.ShowWind === true) ? 1 : 0
+      "show_wind":(config.ShowWind === true) ? 1 : 0,
+      "weather_fetched":0
     });
   }
     
@@ -287,13 +287,12 @@ function locationSuccess(pos) {
 function locationError(err) {
   console.warn('Location error (' + err.code + '): ' + err.message);
   Pebble.sendAppMessage({
-    "city":"GPS N/A"
+    "city":"GPS N/A",
+    "weather_fetched":0
   });
 }
 
 function refreshWeather() {
-  
-  lastSuccess = null;
   
   if (config.UseGPS) {
     // Trigger weather refresh by fetching location
@@ -311,12 +310,6 @@ function fetchWeather(loc) {
   
   var curr_time;
   curr_time = new Date();
-  
-  // Don't fetch weather again unless it was over 20 minutes ago
-  if (lastSuccess && Math.round((curr_time - lastSuccess) / 60000) <= 20) {
-    if (DEBUG) console.log("Not fetching - less than 20 minutes since last success: " + Math.round((curr_time - lastSuccess) / 60000));
-    return;
-  }
   
   var country, city, woeid, unit, status;
   var reqLoc = new XMLHttpRequest();
@@ -354,14 +347,16 @@ function fetchWeather(loc) {
         } else {
           // WOEID not found
           Pebble.sendAppMessage({
-            "city":"Loc. N/A"}); // Show error breifly
+            "city":"Loc. N/A",  // Show error breifly
+            "weather_fetched":0}); 
         }
 
       } else {
         console.warn("Error: " + reqLoc.status);
         
         Pebble.sendAppMessage({
-            "city":"Err: " + reqLoc.status}); // Show error briefly
+            "city":"Err: " + reqLoc.status, // Show error briefly
+            "weather_fetched":0});
       }
     }
   };
@@ -534,8 +529,6 @@ function fetchWeather(loc) {
           console.log('Wind Speed: ' + windspeed);
         }
         
-        lastSuccess = curr_time;
-        
         // Send the data to the Pebble
         Pebble.sendAppMessage({
             "status":status,
@@ -561,12 +554,14 @@ function fetchWeather(loc) {
             "loc_changed":((locChanged === true) ? 1 : 0),
             "date_format":config.DateFormat,
             "show_wind":((config.ShowWind === true) ? 1 : 0),
-            "wind_speed":windspeed});
+            "wind_speed":windspeed,
+            "weather_fetched":1});
       } else {
         console.warn("Error: " + reqWeather.status);
         
         Pebble.sendAppMessage({
-            "city":"Err: " + reqWeather.status}); // Show error briefly
+            "city":"Err: " + reqWeather.status, // Show error briefly
+            "weather_fetched":0});
       }
     }
   };
