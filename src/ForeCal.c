@@ -190,9 +190,10 @@ static void sync_error_callback(DictionaryResult dict_error, AppMessageResult ap
   if (dict_error == DICT_OK) {
     switch (app_message_error) {
       case APP_MSG_NOT_CONNECTED:
-        if (bluetooth_connection_service_peek())
+        if (bluetooth_connection_service_peek()) {
           strncpy(err_msg, "Run phone app", sizeof(err_msg));
-        else
+          retry = true;
+        } else
           strncpy(err_msg, "BT not conn.", sizeof(err_msg));
         break;
       case APP_MSG_SEND_TIMEOUT:
@@ -586,8 +587,10 @@ static void handle_bt_timeout(void *data) {
 static void handle_bt_update(bool connected) {
   if (connected) {
     // If connected, immediately update BT icon
-    if (bt_timer)
+    if (bt_timer) {
       app_timer_cancel(bt_timer);
+      bt_timer = NULL;
+    }
     
     update_bt_icon(connected);
     
@@ -605,8 +608,7 @@ static void handle_bt_update(bool connected) {
     // If disconnected, wait 15 seconds to update BT icon in case of reconnect
     if (bt_timer) {
       app_timer_reschedule(bt_timer, 15000);
-    }
-    else {
+    } else {
       bt_timer = app_timer_register(15000, handle_bt_timeout, NULL);
     }
   }
