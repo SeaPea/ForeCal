@@ -938,7 +938,8 @@ static void window_load(Window *window) {
   bt_layer = bitmap_layer_create(GRect(128, 0, 11, 18));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
   bitmap_layer_set_bitmap(bt_layer, bt_icon);
-  update_bt_icon(bluetooth_connection_service_peek());
+  bt_connected = bluetooth_connection_service_peek();
+  update_bt_icon(bt_connected);
   
   batt_layer = bitmap_layer_create(GRect(126, 18, 16, 8));
   layer_add_child(current_layer, bitmap_layer_get_layer(batt_layer));
