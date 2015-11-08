@@ -1,6 +1,12 @@
 #include <pebble.h>
 #include "effects.h"
-  
+
+#ifdef PBL_SDK_2
+#define IF_23(sdk2, sdk3) (sdk2)
+#else
+#define IF_23(sdk2, sdk3) (sdk3)
+#endif
+
 // { ********* Graphics utility functions (probablu should be seaparated into anothe file?) *********
 
 // set pixel color at given coordinates 
@@ -202,21 +208,27 @@ void effect_invert(GContext* ctx,  GRect position, void* param) {
 void effect_invert_bw_only(GContext* ctx,  GRect position, void* param) {
   //capturing framebuffer bitmap
   GBitmap *fb = graphics_capture_frame_buffer(ctx);
+#ifdef PBL_RECT
   uint8_t *bitmap_data =  gbitmap_get_data(fb);
-  int bytes_per_row = gbitmap_get_bytes_per_row(fb);
+#endif
+  int bytes_per_row = PBL_IF_RECT_ELSE(gbitmap_get_bytes_per_row(fb), 0);
 
 #ifdef PBL_COLOR
   GColor pixel;
 #endif
   
   for (int y = 0; y < position.size.h; y++) {
-     for (int x = 0; x < position.size.w; x++) {
+    // Get the min and max x values for this row
+#ifndef PBL_SDK_2
+    GBitmapDataRowInfo info = gbitmap_get_data_row_info(fb, y);
+#endif
+     for (int x = IF_23(0, info.min_x); x < IF_23(position.size.w, info.max_x); x++) {
         #ifdef PBL_COLOR // on Basalt invert only black or white
-          pixel.argb = get_pixel(bitmap_data, bytes_per_row, y + position.origin.y, x + position.origin.x);
+          pixel.argb = get_pixel(PBL_IF_RECT_ELSE(bitmap_data, info.data), bytes_per_row, y + position.origin.y, x + position.origin.x);
           if (gcolor_equal(pixel, GColorBlack))
-            set_pixel(bitmap_data, bytes_per_row, y + position.origin.y, x + position.origin.x, GColorWhite.argb);
+            set_pixel(PBL_IF_RECT_ELSE(bitmap_data, info.data), bytes_per_row, y + position.origin.y, x + position.origin.x, GColorWhite.argb);
           else if (gcolor_equal(pixel, GColorWhite))
-            set_pixel(bitmap_data, bytes_per_row, y + position.origin.y, x + position.origin.x, GColorBlack.argb);
+            set_pixel(PBL_IF_RECT_ELSE(bitmap_data, info.data), bytes_per_row, y + position.origin.y, x + position.origin.x, GColorBlack.argb);
         #else // on Aplite since only 1 and 0 is returning, doing "not" by 1 - pixel
           set_pixel(bitmap_data, bytes_per_row, y + position.origin.y, x + position.origin.x, 1 - get_pixel(bitmap_data, bytes_per_row, y + position.origin.y, x + position.origin.x));
         #endif
@@ -233,15 +245,20 @@ void effect_invert_brightness(GContext* ctx,  GRect position, void* param) {
 #ifdef PBL_COLOR
   //capturing framebuffer bitmap
   GBitmap *fb = graphics_capture_frame_buffer(ctx);
+#ifdef PBL_RECT
   uint8_t *bitmap_data =  gbitmap_get_data(fb);
-  int bytes_per_row = gbitmap_get_bytes_per_row(fb);
+#endif
+  int bytes_per_row = PBL_IF_RECT_ELSE(gbitmap_get_bytes_per_row(fb), 0);
 
   GColor pixel;
   GColor pixel_new;
   
   for (int y = 0; y < position.size.h; y++) {
-     for (int x = 0; x < position.size.w; x++) {
-         pixel.argb = get_pixel(bitmap_data, bytes_per_row, y + position.origin.y, x + position.origin.x);
+#ifndef PBL_SDK_2
+    GBitmapDataRowInfo info = gbitmap_get_data_row_info(fb, y);
+#endif
+     for (int x = IF_23(0, info.min_x); x < IF_23(position.size.w, info.max_x); x++) {
+         pixel.argb = get_pixel(PBL_IF_RECT_ELSE(bitmap_data, info.data), bytes_per_row, y + position.origin.y, x + position.origin.x);
          
          if (!gcolor_equal(pixel, GColorBlack) && !gcolor_equal(pixel, GColorWhite)) {
            // Only apply if not black/white (add effect_invert_bw_only for that too)
@@ -373,7 +390,7 @@ void effect_invert_brightness(GContext* ctx,  GRect position, void* param) {
            else if (gcolor_equal(pixel, GColorPastelYellow))
              pixel_new = GColorChromeYellow;
            
-           set_pixel(bitmap_data, bytes_per_row, y + position.origin.y, x + position.origin.x, pixel_new.argb);
+           set_pixel(PBL_IF_RECT_ELSE(bitmap_data, info.data), bytes_per_row, y + position.origin.y, x + position.origin.x, pixel_new.argb);
          }
      }
   }

@@ -189,10 +189,11 @@
     "shortName": "ForeCal",
     "targetPlatforms": [
         "aplite",
-        "basalt"
+        "basalt",
+        "chalk"
     ],
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
-    "versionLabel": "2.5",
+    "versionLabel": "2.6",
     "watchapp": {
         "watchface": true
     }

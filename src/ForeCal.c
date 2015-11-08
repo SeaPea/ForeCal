@@ -706,14 +706,14 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
       }
       
       graphics_context_set_fill_color(ctx, back_color);
-      graphics_fill_rect(ctx, GRect((d * 20) + d, ypos + 4, 19, 11), 0, GCornerNone);
+      graphics_fill_rect(ctx, GRect((d * PBL_IF_RECT_ELSE(20, 17)) + d, ypos + 4, PBL_IF_RECT_ELSE(19, 16), 11), 0, GCornerNone);
       
     }
     
     // Draw the date text in the correct calendar cell
     snprintf(curr_date_str, 3, "%d", curr_date);
     graphics_draw_text(ctx, curr_date_str, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD), 
-                       GRect((d * 20) + d, ypos, 19, 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+                       GRect((d * PBL_IF_RECT_ELSE(20, 17)) + d, ypos, PBL_IF_RECT_ELSE(19, 16), 14), GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     
     if (curr_date == highlight_day) graphics_context_set_text_color(ctx, font_color);
   }
@@ -722,13 +722,15 @@ static void cal_week_draw_dates(GContext *ctx, int start_date, int curr_mon_len,
 // Handle drawing of the 3 week calendar layer
 static void cal_layer_draw(Layer *layer, GContext *ctx) {
   
+  GRect bounds = layer_get_bounds(layer);
+  
   // Sanitize calendar parameters that somehow get messed up on some watches
   if (s_savedata.startday > 1) s_savedata.startday = 0;
   if (s_savedata.cal_offset != 0 && s_savedata.cal_offset != 7) s_savedata.cal_offset = 0;
   
   // Paint calendar background
   graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, GRect(0, 0, 144, 46), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, 0, bounds.size.w, bounds.size.h), 0, GCornerNone);
   
   int rowtexttop1;
   int rowtexttop2;
@@ -736,21 +738,18 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
   
   // Paint inverted rows background (Pebble Times have rounded corners so need to draw calendar more compact)
   graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, GRect(0, 11, 144, 11), 0, GCornerNone);
-  switch (watch_info_get_model()) {
-    case WATCH_INFO_MODEL_PEBBLE_TIME:
-    case WATCH_INFO_MODEL_PEBBLE_TIME_STEEL:
-      graphics_fill_rect(ctx, GRect(0, 33, 144, 13), 0, GCornerNone);
-      rowtexttop1 = 7;
-      rowtexttop2 = 18;
-      rowtexttop3 = 29;
-      break;
-    default:
-      graphics_fill_rect(ctx, GRect(0, 35, 144, 11), 0, GCornerNone);
-      rowtexttop1 = 7;
-      rowtexttop2 = 19;
-      rowtexttop3 = 31;
-  }
+  graphics_fill_rect(ctx, GRect(0, 11, bounds.size.w, 11), 0, GCornerNone);
+#ifndef PBL_COLOR
+  graphics_fill_rect(ctx, GRect(0, 35, bounds.size.w, 11), 0, GCornerNone);
+  rowtexttop1 = 7;
+  rowtexttop2 = 19;
+  rowtexttop3 = 31;
+#else
+  graphics_fill_rect(ctx, GRect(0, 33, bounds.size.w, 13), 0, GCornerNone);
+  rowtexttop1 = 7;
+  rowtexttop2 = 18;
+  rowtexttop3 = 29;
+#endif
   
   // Get current time
   struct tm *t;
@@ -767,7 +766,9 @@ static void cal_layer_draw(Layer *layer, GContext *ctx) {
       curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
     else
       curr_font = fonts_get_system_font(FONT_KEY_GOTHIC_14);
-    graphics_draw_text(ctx, weekdays[(d + s_savedata.startday) % 7], curr_font, GRect((d * 20) + d, -4, 19, 14), 
+    graphics_draw_text(ctx, weekdays[(d + s_savedata.startday) % 7], curr_font, 
+                       GRect((d * PBL_IF_RECT_ELSE(20, 17)) + d, -4, PBL_IF_RECT_ELSE(19, 16 +
+                             ((d+s_savedata.startday) == 3 ? 1 : 0)), 14), 
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
   
@@ -908,10 +909,12 @@ static void window_load(Window *window) {
       s_savedata.update_interval = persist_read_int(WEATHER_UPDATE_INTERVAL_KEY);
   }
   
-  // Setup 'current' layer (time, date, current temp, battery, bluetooth)
-  current_layer = layer_create(GRect(0, 0, 144, 58));
+  GRect bounds = layer_get_bounds(window_layer); 
   
-  clock_layer = text_layer_create(GRect(-1, -13, 126, 50));
+  // Setup 'current' layer (time, date, current temp, battery, bluetooth)
+  current_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 0, bounds.size.w, 58), bounds)); 
+  
+  clock_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(-1, -13, 126, 50), GRect((bounds.size.w-126)/2, 13, 126, 50)));
   text_layer_set_text_color(clock_layer, GColorWhite);
   text_layer_set_background_color(clock_layer, GColorClear);
   text_layer_set_font(clock_layer, fonts_get_system_font(FONT_KEY_ROBOTO_BOLD_SUBSET_49));
@@ -919,7 +922,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(clock_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(clock_layer));
   
-  pm_layer = text_layer_create(GRect(123, 23, 20, 15));
+  pm_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(123, 23, 20, 15), GRect(bounds.size.w-((bounds.size.w-126)/2), 48, 20, 15)));
   text_layer_set_text_color(pm_layer, GColorWhite);
   text_layer_set_background_color(pm_layer, GColorClear);
   text_layer_set_font(pm_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
@@ -927,50 +930,52 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(pm_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(pm_layer));
   
-  date_layer = text_layer_create(GRect(55, 30, 89, 26));
+  date_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(55, 30, 89, 26), GRect((bounds.size.w-89)/2, 2, 89, 26)));
   text_layer_set_text_color(date_layer, GColorWhite);
   text_layer_set_background_color(date_layer, GColorClear);
   text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
-  text_layer_set_text_alignment(date_layer, GTextAlignmentRight);
+  text_layer_set_text_alignment(date_layer, PBL_IF_RECT_ELSE(GTextAlignmentRight, GTextAlignmentCenter));
   text_layer_set_overflow_mode(date_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(date_layer));
   
-  bt_layer = bitmap_layer_create(GRect(128, 0, 11, 18));
+  bt_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(128, 0, 11, 18), GRect(156, 112, 11, 18)));
   layer_add_child(current_layer, bitmap_layer_get_layer(bt_layer));
   bitmap_layer_set_bitmap(bt_layer, bt_icon);
   bt_connected = bluetooth_connection_service_peek();
   update_bt_icon(bt_connected);
   
-  batt_layer = bitmap_layer_create(GRect(126, 18, 16, 8));
+  batt_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(126, 18, 16, 8), GRect(8, 112, 16, 8)));
   layer_add_child(current_layer, bitmap_layer_get_layer(batt_layer));
   BatteryChargeState batt_state = battery_state_service_peek();
   layer_set_hidden(bitmap_layer_get_layer(batt_layer), s_savedata.show_batt);
   handle_batt_update(batt_state);
   battery_state_service_subscribe(handle_batt_update);
   
-  curr_temp_layer = text_layer_create(GRect(0, 30, 45, 26));
+  curr_temp_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 30, 45, 26), GRect((bounds.size.w-45)/2, 150, 45, 26)));
   text_layer_set_text_color(curr_temp_layer, GColorWhite);
   text_layer_set_background_color(curr_temp_layer, GColorClear);
   text_layer_set_font(curr_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
-  text_layer_set_text_alignment(curr_temp_layer, GTextAlignmentLeft);
+  text_layer_set_text_alignment(curr_temp_layer, PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentCenter));
   text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
   
-  wind_speed_layer = text_layer_create(GRect(40, 34, 45, 26));
+  wind_speed_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(40, 34, 45, 26), GRect(46, 5, 45, 26)));
   text_layer_set_text_color(wind_speed_layer, GColorWhite);
   text_layer_set_background_color(wind_speed_layer, GColorClear);
   text_layer_set_font(wind_speed_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
-  text_layer_set_text_alignment(wind_speed_layer, GTextAlignmentCenter);
+  text_layer_set_text_alignment(wind_speed_layer, PBL_IF_RECT_ELSE(GTextAlignmentCenter, GTextAlignmentLeft));
   text_layer_set_overflow_mode(wind_speed_layer, GTextOverflowModeFill);
   layer_set_hidden(text_layer_get_layer(wind_speed_layer), !s_savedata.show_wind);
+#ifndef PBL_ROUND
   layer_add_child(current_layer, text_layer_get_layer(wind_speed_layer));
+#endif
   
   layer_add_child(window_layer, current_layer);
   
   // Setup forecast layer (High/Low Temp, conditions, sunrise/sunset)
-  forecast_layer = layer_create(GRect(0, 57, 144, 64));
+  forecast_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 57, bounds.size.w, 64), GRect(0, 63, bounds.size.w, bounds.size.h-63)));
   
-  forecast_day_layer = text_layer_create(GRect(0, -4, 64, 17));
+  forecast_day_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, -4, 64, 17), GRect(0, -4, (bounds.size.w/2)-20, 17)));
   text_layer_set_text_color(forecast_day_layer, GColorBlack);
   text_layer_set_background_color(forecast_day_layer, GColorWhite);
   text_layer_set_font(forecast_day_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
@@ -978,7 +983,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(forecast_day_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(forecast_day_layer));
   
-  status_layer = text_layer_create(GRect(60, -4, 84, 17));
+  status_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(60, -4, 84, 17), GRect((bounds.size.w/2)+20, -4, (bounds.size.w/2)-20, 17)));
   text_layer_set_text_color(status_layer, GColorBlack);
   text_layer_set_background_color(status_layer, GColorWhite);
   text_layer_set_font(status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
@@ -986,7 +991,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(status_layer, GTextOverflowModeTrailingEllipsis);
   layer_add_child(forecast_layer, text_layer_get_layer(status_layer));
   
-  high_label_layer = text_layer_create(GRect(1, 6, 10, 24));
+  high_label_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(1, 6, 10, 24), GRect(2, 6, 10, 24)));
   text_layer_set_text_color(high_label_layer, GColorWhite);
   text_layer_set_background_color(high_label_layer, GColorClear);
   text_layer_set_font(high_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -996,7 +1001,7 @@ static void window_load(Window *window) {
   layer_set_hidden(text_layer_get_layer(high_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(high_label_layer));
   
-  high_temp_layer = text_layer_create(GRect(9, 6, 45, 24));
+  high_temp_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(9, 6, 45, 24), GRect(10, 6, 45, 24)));
   text_layer_set_text_color(high_temp_layer, GColorWhite);
   text_layer_set_background_color(high_temp_layer, GColorClear);
   text_layer_set_font(high_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -1004,7 +1009,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(high_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(high_temp_layer));
   
-  low_label_layer = text_layer_create(GRect(1, 23, 10, 24));
+  low_label_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(1, 23, 10, 24), GRect(122, 6, 10, 24)));
   text_layer_set_text_color(low_label_layer, GColorWhite);
   text_layer_set_background_color(low_label_layer, GColorClear);
   text_layer_set_font(low_label_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -1014,7 +1019,7 @@ static void window_load(Window *window) {
   layer_set_hidden(text_layer_get_layer(low_label_layer), true);
   layer_add_child(forecast_layer, text_layer_get_layer(low_label_layer));
   
-  low_temp_layer = text_layer_create(GRect(9, 23, 45, 24));
+  low_temp_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(9, 23, 45, 24), GRect(130, 6, 45, 24)));
   text_layer_set_text_color(low_temp_layer, GColorWhite);
   text_layer_set_background_color(low_temp_layer, GColorClear);
   text_layer_set_font(low_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
@@ -1022,7 +1027,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(low_temp_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(low_temp_layer));
   
-  sun_rise_set_layer = text_layer_create(GRect(101, 26, 47, 18));
+  sun_rise_set_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(101, 26, 47, 18), GRect(100, 86, 47, 18)));
   text_layer_set_text_color(sun_rise_set_layer, GColorWhite);
   text_layer_set_background_color(sun_rise_set_layer, GColorClear);
   text_layer_set_font(sun_rise_set_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
@@ -1030,13 +1035,13 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(sun_rise_set_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(sun_rise_set_layer));
   
-  icon_layer = bitmap_layer_create(GRect(66, 16, 32, 32));
+  icon_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(66, 16, 32, 32), GRect((bounds.size.w-32)/2, 0, 32, 32)));
   layer_add_child(forecast_layer, bitmap_layer_get_layer(icon_layer));
   
-  sun_layer = bitmap_layer_create(GRect(115, 17, 20, 14));
+  sun_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(115, 17, 20, 14), GRect(50, 92, 20, 14)));
   layer_add_child(forecast_layer, bitmap_layer_get_layer(sun_layer));
   
-  condition_layer = text_layer_create(GRect(0, 43, 144, 24));
+  condition_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 43, 144, 24), GRect(0, 26, bounds.size.w, 24)));
   text_layer_set_text_color(condition_layer, GColorWhite);
   text_layer_set_background_color(condition_layer, GColorClear);
   text_layer_set_font(condition_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
@@ -1046,16 +1051,22 @@ static void window_load(Window *window) {
   
   layer_add_child(window_layer, forecast_layer);
   
+#ifdef PBL_ROUND
+  text_layer_enable_screen_text_flow_and_paging(forecast_day_layer, 1);
+  text_layer_enable_screen_text_flow_and_paging(status_layer, 1);
+  text_layer_enable_screen_text_flow_and_paging(condition_layer, 1);
+#endif
+  
   // Setup 3 week calendar layer
-  cal_layer = layer_create(GRect(0, 122, 144, 47));
+  cal_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 122, 144, 47), GRect((bounds.size.w-124)/2, 111, 124, 44)));
   layer_add_child(window_layer, cal_layer);
   
   layer_set_update_proc(cal_layer, cal_layer_draw);
   
-  daymode_layer = effect_layer_create(GRect(0, 0, 144, 168));
+  daymode_layer = effect_layer_create(bounds);
   effect_layer_add_effect(daymode_layer, effect_invert_bw_only, NULL);
   
-  brightness_inverter = effect_layer_create(GRect(126, 0, 16, 26));
+  brightness_inverter = effect_layer_create(layer_get_bounds(bitmap_layer_get_layer(bt_layer)));
   effect_layer_add_effect(brightness_inverter, effect_invert_brightness, NULL);
   set_daymode(s_savedata.daymode);
   
