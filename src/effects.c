@@ -222,7 +222,7 @@ void effect_invert_bw_only(GContext* ctx,  GRect position, void* param) {
 #ifndef PBL_SDK_2
     GBitmapDataRowInfo info = gbitmap_get_data_row_info(fb, y);
 #endif
-     for (int x = IF_23(0, info.min_x); x < IF_23(position.size.w, info.max_x); x++) {
+     for (int x = IF_23(0, info.min_x); x < IF_23(position.size.w, info.max_x+1); x++) {
         #ifdef PBL_COLOR // on Basalt invert only black or white
           pixel.argb = get_pixel(PBL_IF_RECT_ELSE(bitmap_data, info.data), bytes_per_row, y + position.origin.y, x + position.origin.x);
           if (gcolor_equal(pixel, GColorBlack))
@@ -257,7 +257,7 @@ void effect_invert_brightness(GContext* ctx,  GRect position, void* param) {
 #ifndef PBL_SDK_2
     GBitmapDataRowInfo info = gbitmap_get_data_row_info(fb, y);
 #endif
-     for (int x = IF_23(0, info.min_x); x < IF_23(position.size.w, info.max_x); x++) {
+     for (int x = IF_23(0, info.min_x); x < IF_23(position.size.w, info.max_x+1); x++) {
          pixel.argb = get_pixel(PBL_IF_RECT_ELSE(bitmap_data, info.data), bytes_per_row, y + position.origin.y, x + position.origin.x);
          
          if (!gcolor_equal(pixel, GColorBlack) && !gcolor_equal(pixel, GColorWhite)) {
