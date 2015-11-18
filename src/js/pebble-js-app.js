@@ -1,5 +1,5 @@
 var DEBUG = false;
-var APP_VER = "v2.7";
+var APP_VER = "v2.8";
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 var lastWOEID = 0;
@@ -400,9 +400,20 @@ function fetchWeather(loc) {
         
         var curr_temp, curr_temp_str, sunrise, sunrise_str, sunset, sunset_str;
         var curr_time, forecast_day, forecast_date, high, low, icon, condition;
-        var auto_daymode, sun_rise_set, windspeed_val, windspeed;
+        var auto_daymode, sun_rise_set, windspeed_val, windspeed, weather_time;
         
         curr_time = new Date();
+        
+        // Get weather data date (sometimes Yahoo returns old, stale data)
+        weather_time = new Date(getXmlAttrVal(reqWeather.responseText, 'yweather:condition', 'date'));
+        
+        if ((Math.abs(curr_time - weather_time) / 3600000) > 3) {
+          if (DEBUG) console.log('Stale weather data: ' + weather_time);
+          Pebble.sendAppMessage({
+            "city":"Err: Old Data", // Show error briefly
+            "weather_fetched":0});
+          return;
+        }
         
         // Get current temperature
         curr_temp_str = getXmlAttrVal(reqWeather.responseText, 'yweather:condition', 'temp');
@@ -465,23 +476,37 @@ function fetchWeather(loc) {
         var reAttr = new RegExp('([^\\s=>"]+)\\s*=\\s*"([^"]+)"');
         var forecasts = reqWeather.responseText.match(/<yweather:forecast[^>]+>/img);
         
+        if (DEBUG) {
+          if (!forecasts || forecasts.length === 0) {
+            console.log('Forecasts not found:');
+            console.log(reqWeather.responseText);
+          }
+          console.log('Desired forecast date: ' + forecast_date.getDate().toString());
+        }
+        
         var fd, attrs, attr, dateAttr;
+        var forecast_found = false;
         
         low = ''; high = ''; condition = ''; icon = 0;
         
         // Parse the forecast data out of the XML
         for (var i = 0; i < forecasts.length; i++) {
+          if (DEBUG) console.log(forecasts[i]);
           dateAttr = reDate.exec(forecasts[i]);
           
           if (dateAttr && dateAttr.length == 2) {
             fd = new Date(dateAttr[1]);
             // Find the forecast data for today/tomorrow
+            if (DEBUG) {
+              console.log('Weather data forecast date:' + fd.getDate().toString());
+            }
             if (fd.getDate() == forecast_date.getDate()) {
               attrs = forecasts[i].match(/[^\s=>"]+\s*=\s*"[^"]+"/img);
               for (var a = 0; a < attrs.length; a++) {
                 attr = reAttr.exec(attrs[a]);
                 // Get all the weather forecast attribute values
                 if (attr && attr.length == 3) {
+                  forecast_found = true;
                   if (attr[1].toLowerCase() == 'low' && attr[2] !== '')
                     low = attr[2] + '\u00B0' + unit;
                   else if (attr[1].toLowerCase() == 'high' && attr[2] !== '')
@@ -493,6 +518,8 @@ function fetchWeather(loc) {
                 }
               }
               break;
+            } else {
+              if (DEBUG) console.log('Forecast Date NOT found in forecast ' + i);
             }
           }
         }
@@ -508,6 +535,7 @@ function fetchWeather(loc) {
         }
         
         if (DEBUG) {
+          console.log('Forecast Found: ' + forecast_found);
           console.log('Current Temp: ' + curr_temp);
           console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
           console.log('Sunrise: ' + sunset.getHours() + ':' + sunset.getMinutes());
