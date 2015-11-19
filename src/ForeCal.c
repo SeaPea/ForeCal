@@ -262,8 +262,10 @@ static void update_sun_layer(struct tm *t) {
         (!daytime && prev_daytime != 0)) {
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Updating sun layer");
       
-      if (sun_bitmap)
-          gbitmap_destroy(sun_bitmap);
+      if (sun_bitmap) {
+        gbitmap_destroy(sun_bitmap);
+        sun_bitmap = NULL;
+      }
       
       if (daytime) {
         
@@ -357,6 +359,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       if (icon_bitmap == NULL || s_savedata.icon != new_tuple->value->uint8) {
         if (icon_bitmap) {
           gbitmap_destroy(icon_bitmap);
+          icon_bitmap = NULL;
         }
         s_savedata.icon = new_tuple->value->uint8;
         layer_set_hidden(bitmap_layer_get_layer(icon_layer), (s_savedata.icon == 0));
@@ -639,6 +642,7 @@ static void handle_batt_update(BatteryChargeState batt_status) {
   if (new_batt_level != last_batt_level) {
     if (batt_icon) {
       gbitmap_destroy(batt_icon);
+      batt_icon = NULL;
     }
     
     switch (new_batt_level) {
