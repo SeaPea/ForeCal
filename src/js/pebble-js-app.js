@@ -1,5 +1,5 @@
 var DEBUG = false;
-var APP_VER = "v2.9";
+var APP_VER = "v2.10";
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 var lastWOEID = 0;
@@ -321,7 +321,7 @@ function fetchWeather(loc) {
         //console.log(reqLoc.responseText);
         var response = JSON.parse(reqLoc.responseText);
         var location = null;
-        if (response && response.query && response.query.results && response.query.results.Result) { 
+        /*if (response && response.query && response.query.results && response.query.results.Result) { 
           if (response.query.results.Result.woeid && response.query.results.Result.woeid !== '') {
             // Single location result
             location = response.query.results.Result;
@@ -329,6 +329,9 @@ function fetchWeather(loc) {
             // Pick the first result when there are multiple results
             location = response.query.results.Result[0];
           }
+        }*/
+        if (response && response.Result) {
+          location = response.Result;
         }
         
         if (location) {
@@ -605,8 +608,9 @@ function fetchWeather(loc) {
   else {
     if (DEBUG) console.log("Getting WOEID...");
     // URL for getting our WOEID from our current Lat/Long or City position in JSON format
-    reqLoc.open('GET', 'http://query.yahooapis.com/v1/public/yql?q=select%20*%20from%20geo.placefinder%20where%20text%3D%22' + 
-                 encodeURIComponent(loc) + '%22%20and%20gflags%3D%22R%22&format=json', true);
+    //reqLoc.open('GET', 'http://query.yahooapis.com/v1/public/yql?q=select%20*%20from%20geo.placefinder%20where%20text%3D%22' + 
+    //             encodeURIComponent(loc) + '%22%20and%20gflags%3D%22R%22&format=json', true);
+    reqLoc.open('GET', 'http://gws2.maps.yahoo.com/findlocation?pf=1&locale=en_US&offset=15&flags=&gflags=R&start=0&count=1&format=json&q=' + encodeURIComponent(loc), true);
     reqLoc.send(null);
   }
 }
