@@ -33,6 +33,7 @@
         "configurable"
     ],
     "companyName": "SeaPea",
+    "enableMultiJS": true,
     "longName": "ForeCal",
     "projectType": "native",
     "resources": {

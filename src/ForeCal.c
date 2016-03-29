@@ -517,8 +517,8 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     // Update the weather every X minutes as long as it has been more than 5 minutes since the last update
     if (((s_savedata.update_interval == 0 && tick_time->tm_min == 0) || 
         tick_time->tm_min % s_savedata.update_interval == 0) &&
-        (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) > 300)) /*&&
-        (tick_time->tm_hour >= 7 || (tick_time->tm_hour == 0 && tick_time->tm_min <= 20))*/) {
+        (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) > 300)) &&
+        (tick_time->tm_hour >= 7 || (tick_time->tm_hour == 0 && tick_time->tm_min <= 20))) {
       // Record the time when the update attempt started without seconds
       last_update_attempt = time(NULL);
       last_update_attempt -= last_update_attempt % 60;
