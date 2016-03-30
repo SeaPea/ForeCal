@@ -90,7 +90,6 @@ enum MessageKey {
   WEATHER_SUN_SET_HOUR_KEY = 12,
   WEATHER_SUN_SET_MIN_KEY = 13,
   WEATHER_AUTO_DAYMODE_KEY = 14,
-  WEATHER_UPDATE_INTERVAL_KEY = 15,
   CAL_FIRST_DAY_KEY = 16,
   CAL_OFFSET_KEY = 17,
   SHOW_BT_KEY = 18,
@@ -110,22 +109,22 @@ static const uint32_t WEATHER_ICONS[] = {
   RESOURCE_ID_IMAGE_SUNNY, //1
   RESOURCE_ID_IMAGE_PARTLYCLOUDY, //2
   RESOURCE_ID_IMAGE_CLOUDY, //3
-  RESOURCE_ID_IMAGE_WINDY, //4
-  RESOURCE_ID_IMAGE_LOWVISIBILITY, //5
-  RESOURCE_ID_IMAGE_ISOLATEDTHUNDERSTORMS, //6
-  RESOURCE_ID_IMAGE_SCATTEREDTHUNDERSTORMS, //7
+  RESOURCE_ID_IMAGE_COLD, //4
+  RESOURCE_ID_IMAGE_HOT, //5
+  RESOURCE_ID_IMAGE_WINDY, //6
+  RESOURCE_ID_IMAGE_LOWVISIBILITY, //7
   RESOURCE_ID_IMAGE_DRIZZLE, //8
   RESOURCE_ID_IMAGE_RAIN, //9
-  RESOURCE_ID_IMAGE_HAIL, //10
-  RESOURCE_ID_IMAGE_SNOW, //11
-  RESOURCE_ID_IMAGE_MIXEDSNOW, //12
-  RESOURCE_ID_IMAGE_COLD, //13
-  RESOURCE_ID_IMAGE_TORNADO, //14
-  RESOURCE_ID_IMAGE_STORM, //15
-  RESOURCE_ID_IMAGE_LIGHTSNOW, //16
-  RESOURCE_ID_IMAGE_HOT, //17
-  RESOURCE_ID_IMAGE_HURRICANE, //18
-  RESOURCE_ID_IMAGE_THUNDERSHOWERS //19
+  RESOURCE_ID_IMAGE_LIGHTSNOW, //10
+  RESOURCE_ID_IMAGE_MIXEDSNOW, //11
+  RESOURCE_ID_IMAGE_HAIL, //12
+  RESOURCE_ID_IMAGE_SNOW, //13
+  RESOURCE_ID_IMAGE_THUNDERSHOWERS, //14
+  RESOURCE_ID_IMAGE_ISOLATEDTHUNDERSTORMS, //15
+  RESOURCE_ID_IMAGE_SCATTEREDTHUNDERSTORMS, //16
+  RESOURCE_ID_IMAGE_STORM, //17
+  RESOURCE_ID_IMAGE_TORNADO, //18
+  RESOURCE_ID_IMAGE_HURRICANE //19
 };
 
 // Procedure that sends the Pebble 12/24hr setting to the Phone and initializes the first weather call
@@ -437,10 +436,6 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       s_savedata.auto_daymode = (new_tuple->value->uint8 == 1);
       update_sun_layer(NULL);
       break;
-    case WEATHER_UPDATE_INTERVAL_KEY:
-      s_savedata.update_interval = new_tuple->value->uint8;
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Update Interval: %d", s_savedata.update_interval);
-      break;
     case CAL_FIRST_DAY_KEY:
       s_savedata.startday = new_tuple->value->uint8;
       APP_LOG(APP_LOG_LEVEL_DEBUG, "First Day: %d", s_savedata.startday);
@@ -514,11 +509,8 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
     clock_copy_time_string(current_time, sizeof(current_time));
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
-    // Update the weather every X minutes as long as it has been more than 5 minutes since the last update
-    if (((s_savedata.update_interval == 0 && tick_time->tm_min == 0) || 
-        tick_time->tm_min % s_savedata.update_interval == 0) &&
-        (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) > 300)) &&
-        (tick_time->tm_hour >= 7 || (tick_time->tm_hour == 0 && tick_time->tm_min <= 20))) {
+    // Update the weather every 60 minutes
+    if (!loading && (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= 3600))) {
       // Record the time when the update attempt started without seconds
       last_update_attempt = time(NULL);
       last_update_attempt -= last_update_attempt % 60;
@@ -822,7 +814,6 @@ static void window_load(Window *window) {
   s_savedata.sun_set_hour = 99;
   s_savedata.sun_set_min = 99;
   s_savedata.auto_daymode = true;
-  s_savedata.update_interval = 20;
   s_savedata.date_format = 0;
   s_savedata.show_wind = false;
   s_savedata.wind_speed[0] = '\0';
@@ -909,9 +900,6 @@ static void window_load(Window *window) {
     
     if (persist_exists(WEATHER_AUTO_DAYMODE_KEY))
       s_savedata.auto_daymode = (persist_read_int(WEATHER_AUTO_DAYMODE_KEY) == 1);
-    
-    if (persist_exists(WEATHER_UPDATE_INTERVAL_KEY))
-      s_savedata.update_interval = persist_read_int(WEATHER_UPDATE_INTERVAL_KEY);
   }
   
   GRect bounds = layer_get_bounds(window_layer); 
@@ -1084,29 +1072,12 @@ static void window_load(Window *window) {
   temp = time(NULL);
   t = localtime(&temp);
   
-  // Temporarily disable update interval so that handle_tick doesn't trigger weather update
-  uint8_t interval = s_savedata.update_interval;
-  s_savedata.update_interval = 99;
-  
   // Init time and date
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
-  // Re-enable update interval
-  s_savedata.update_interval = interval;
-  
-  // Get minute components for current time and last update time
-  uint8_t current_mins = (temp / 60) % 60;
-  uint8_t last_update_mins = (s_savedata.last_update / 60) % 60;
-  
-  // If it has been longer than update_interval in minutes since last update or last update is not known
-  // or the last update and current time span an update internal and is more than 10 minutes ago
+  // If it has been longer than 60 minutes since last update or last update is not known
   // then we need to run an update
-  bool need_update = (s_savedata.last_update == 0 || 
-      (temp - s_savedata.last_update) >= ((s_savedata.update_interval == 0 ? 60 : s_savedata.update_interval) * 60) ||
-      (((last_update_mins > current_mins) || 
-        (last_update_mins < s_savedata.update_interval && current_mins >= s_savedata.update_interval) ||
-        (last_update_mins < (s_savedata.update_interval*2) && current_mins >= (s_savedata.update_interval*2))) && 
-       ((temp - s_savedata.last_update) > 600) ));
+  bool need_update = (s_savedata.last_update == 0 || ((temp - s_savedata.last_update) >= 3600) );
   
   // Initialize weather data UI
   Tuplet initial_values[] = {
@@ -1124,7 +1095,6 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_SUN_SET_HOUR_KEY, s_savedata.sun_set_hour),
     TupletInteger(WEATHER_SUN_SET_MIN_KEY, s_savedata.sun_set_min),
     TupletInteger(WEATHER_AUTO_DAYMODE_KEY, s_savedata.auto_daymode ? 1 : 0),
-    TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, s_savedata.update_interval),
     TupletInteger(CAL_FIRST_DAY_KEY, s_savedata.startday),
     TupletInteger(CAL_OFFSET_KEY, s_savedata.cal_offset),
     TupletInteger(SHOW_BT_KEY, s_savedata.show_bt ? 1 : 0),

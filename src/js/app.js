@@ -1,4 +1,4 @@
-var DEBUG = true;
+var DEBUG = false;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
 // APPLY FOR YOUR OWN KEY at OpenWeatherMap.org
@@ -27,7 +27,6 @@ var config = {
   ForecastMin: 0,
   WeatherLoc: '',
   TempUnit: 'Auto',
-  UpdateInterval: 20,
   FirstDay: 0,
   CalOffset: 0,
   ShowWind: 0,
@@ -105,7 +104,11 @@ function saveSettings() {
   if (refreshW) {
     if (DEBUG) console.log('Refreshing weather after changing settings');
     localStorage.removeItem("lastStationId");
+    localStorage.removeItem("lastUpdate");
+    localStorage.removeItem("lastForecastUpdate");
     lastStationId = null;
+    lastUpdate = null;
+    lastForecastUpdate = null;
     refreshWeather();
   } else {
     if (DEBUG) {
@@ -137,76 +140,101 @@ function saveSettings() {
     
 }
 
-// Convert/Reduce Yahoo weather codes to our weather icons
-function iconFromWeatherId(weatherId) {
+// Convert/Reduce OpenWeatherMap weather codes to our weather codes for icons and gives an 'exterme' priority
+function codeFromWeatherId(weatherId) {
   switch (weatherId) {
-    case '31': //clear (night)
-    case '32': //sunny
-    case '33': //fair (night)
-    case '34': //fair (day)
+    case 800: //clear
       return 1; //Sunny
-    case '29': //partly cloudy (night)
-    case '30': //partly cloudy (day)
-    case '44': //partly cloudy
+    case 801: //few clouds
+    case 802: //scattered clouds
+    case 951: //calm
       return 2; //Partly Cloudy
-    case '26': //cloudy
-    case '27': //mostly cloudy (night)
-    case '28': //mostly cloudy (day)
+    case 803: //broken clouds
+    case 804: //overcast clouds
       return 3; //Cloudy
-    case '23': //blustery
-    case '24': //windy
-      return 4; //Windy
-    case '19': //dust
-    case '20': //foggy
-    case '21': //haze
-    case '22': //smoky
-      return 5; //Low Visility
-    case '4':  //thunderstorms
-    case '37': //isolated thunderstorms
-      return 6; //Isolated Thunderstorms
-    case '3':  //severe thunderstorms
-    case '38': //scattered thunderstorms
-    case '39': //scattered thunderstorms
-      return 7; //Scattered Thunderstorms
-    case '9':  //drizzle
+    case 903: //cold
+      return 4; //Cold
+    case 904: //hot
+      return 5; //Hot
+    case 771: //squalls
+    case 905: //windy
+    case 952: //light breeze
+    case 953: //gentle breeze
+    case 954: //moderate breeze
+    case 955: //fresh breeze
+    case 956: //strong breeze
+    case 957: //high wind, near gale
+      return 6; //Windy
+    case 701: //mist 
+    case 711: //smoke 
+    case 721: //haze 
+    case 731: //sand, dust whirls
+    case 741: //fog 
+    case 751: //sand 
+    case 761: //dust
+    case 762: //volcanic ash
+      return 7; //Low Visility
+    case 300: //light intensity drizzle
+    case 301: //drizzle 
+    case 302: //heavy intensity drizzle
+    case 310: //light intensity drizzle rain
+    case 311: //drizzle rain
+    case 312: //heavy intensity drizzle rain
+    case 313: //shower rain and drizzle
+    case 314: //heavy shower rain and drizzle
+    case 321: //shower drizzle
       return 8; //Drizzle
-    case '11': //showers
-    case '12': //showers
-    case '40': //scattered showers
+    case 500: //light rain
+    case 501: //moderate rain
+    case 502: //heavy intensity rain
+    case 503: //very heavy rain
+    case 504: //extreme rain
+    case 520: //light intensity shower rain
+    case 521: //shower rain
+    case 522: //heavy intensity shower rain
+    case 531: //ragged shower rain
       return 9; //Rain
-    case '8':  //freezing drizzle
-    case '10': //freezing rain
-    case '17': //hail
-    case '35': //mixed rain and hail
-      return 10; //Hail
-    case '15': //blowing snow
-    case '16': //snow
-    case '18': //sleet
-    case '41': //heavy snow
-    case '43': //heavy snow
-    case '46': //snow showers
-      return 11; //Snow
-    case '5':  //mixed rain and snow
-    case '6':  //mixed rain and sleet
-    case '7':  //mixed snow and sleet
-      return 12; //Mixed Snow
-    case '25': //cold
-      return 13; //Cold
-    case '0':  //tornado
-      return 14; //Tornado
-    case '1':  //tropical storm
-      return 15; //Storm
-    case '13': //snow flurries
-    case '14': //light snow showers
-    case '42': //scattered snow showers
-      return 16; //Light Snow
-    case '36': //hot
-      return 17; //Hot
-    case '2':  //hurricane
-      return 18; //Hurricane
-    case '45': //thundershowers
-    case '47': //isolated thundershowers
-      return 19; // Thundershowers
+    case 611: //sleet
+    case 612: //shower sleet
+    case 615: //light rain and snow
+    case 616: //rain and snow
+      return 10; //Mixed Snow
+    case 600: //light snow
+    case 620: //light shower snow
+    case 621: //shower snow
+      return 11; //Light Snow
+    case 511: //freezing rain
+    case 906: //hail
+      return 12; //Hail
+    case 601: //light snow
+    case 602: //snow
+    case 622: //heavy shower snow
+      return 13; //Snow
+    case 200: //thunderstorm with light rain
+    case 201: //thunderstorm with rain
+    case 202: //thunderstorm with heavy rain
+    case 230: //thunderstorm with light drizzle
+    case 231: //thunderstorm with drizzle
+    case 232: //thunderstorm with heavy drizzle
+      return 14; // Thundershowers
+    case 210: //light thunderstorm
+    case 211: //thunderstorm
+      return 15; //Isolated Thunderstorms
+    case 212: //heavy thunderstorm
+    case 221: //ragged thunderstorm
+      return 16; //Scattered Thunderstorms
+    case 901: //tropical storm
+    case 958: //gale
+    case 959: //severe gale
+    case 960: //storm
+    case 961: //violent storm
+      return 17; //Storm
+    case 771: //tornado
+    case 900: //tornado
+      return 18; //Tornado
+    case 902: //hurricane
+    case 962: //hurricane
+      return 19; //Hurricane
     default:
       return 0; // N/A
   }
@@ -245,9 +273,11 @@ function locationError(err) {
 function refreshWeather() {
   
   if (config.WeatherLoc) {
-    fetchWeather("q=" & encodeURIComponent(config.WeatherLoc));
+    if (DEBUG) console.log('Fetching weather using fixed location: ' + config.WeatherLoc);
+    fetchWeather("q=" + encodeURIComponent(config.WeatherLoc));
   } else {
     // Trigger weather refresh by fetching location
+    if (DEBUG) config.WeatherLoc('Getting GPS location for weather');
     navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
   }
   
@@ -257,13 +287,14 @@ function refreshWeather() {
 function fetchWeather(loc) {
   
   if (DEBUG) console.log("### FETCHING WEATHER ###");
+  if (DEBUG) console.log('Using query string: ' + loc);
   
   var curr_time = new Date();
   
   var country, city, status, units, tempUnit, speedUnit;
   var curr_temp, sunrise, sunset;
-  var curr_time, forecast_day, forecast_date, high, low, icon, condition;
-  var auto_daymode, sun_rise_set, windspeed_val, windspeed, weather_time;
+  var forecast_day, forecast_date, high, low, icon, condition;
+  var auto_daymode, windspeed, weather_time;
   
   if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour || 
                                     (curr_time.getHours() == config.ForecastHour && 
@@ -312,7 +343,7 @@ function fetchWeather(loc) {
           } else {
             units = 'metric';
             tempUnit = '\u00B0' + 'C';
-            speedUnit = 'km/h';
+            speedUnit = 'm/s';
           }
         } else {
           tempUnit = '\u00B0' + config.TempUnit;
@@ -321,7 +352,7 @@ function fetchWeather(loc) {
             speedUnit = 'mph';
           } else {
             units = 'metric';
-            speedUnit = 'km/h';
+            speedUnit = 'm/s';
           }
         }
         
@@ -339,7 +370,7 @@ function fetchWeather(loc) {
         curr_temp = Math.round(d.main.temp).toString() + tempUnit;
         windspeed = Math.round(d.wind.speed) + speedUnit;
         
-        sun_rise_set = ''; daymode = 0;
+        daymode = 0;
         
         if (!config.ColorScheme || config.ColorScheme === '' || config.ColorScheme == 'Auto') {
           auto_daymode = 1;
@@ -447,8 +478,54 @@ function fetchWeather(loc) {
       if(reqForecast.status == 200) {
         // Successfully retrieved forecast weather data
         
+        var d = JSON.parse(reqForecast.responseText);
         
+        localStorage.setItem('lastForecastUpdate', curr_time.toISOString());
         
+        var today = { high: -999, low: 999, code: 0, condition: "" };
+        var tomorrow = { high: -999, low: 999, code: 0, condition: "" };
+        
+        // Use 6am tomorrow as the end of the weather data for today (shows low for today as the next overnight low)
+        var todayEnd = new Date(curr_time);
+        todayEnd.setHours(29, 0, 0, 0);
+        
+        // Use 6am after tomorrow as the end of the weather data for tomorrow
+        var tomorrowEnd = addDays(todayEnd, 1);
+        
+        for (var i = 0; i < d.list.length; i++) {
+          var code = codeFromWeatherId(d.list[i].weather[0].id);
+          if (unixUTC2Local(d.list[i].dt) < todayEnd) {
+            // Get high/low and condition for today
+            if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
+            if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
+            if (code > today.code) {
+              today.code = code;
+              today.condition = d.list[i].weather[0].description;
+            }
+          } else if (unixUTC2Local(d.list[i].dt) < tomorrowEnd) {
+            // Get high/low and condition for today
+            if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
+            if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
+            if (code > tomorrow.code) {
+              tomorrow.code = code;
+              tomorrow.condition = d.list[i].weather[0].description;
+            }
+          } else {
+            break;  
+          }
+        }
+        
+        var forecast;
+        
+        if (forecast_date.getDate() == curr_time.getDate())
+          forecast = today;
+        else
+          forecast = tomorrow;
+        
+        high = Math.round(forecast.high) + tempUnit;
+        low = Math.round(forecast.low) + tempUnit;
+        icon = forecast.code;
+        condition = forecast.condition;
         
         if (DEBUG) {
           console.log('Current Temp: ' + curr_temp);
@@ -462,7 +539,6 @@ function fetchWeather(loc) {
           console.log('Icon: ' + icon);
           console.log('Daymode: ' + daymode);
           console.log('Auto Daymode: ' + auto_daymode);
-          console.log('Update Interval: ' + config.UpdateInterval);
           console.log('First Day: ' + config.FirstDay);
           console.log('Calendar Offset: ' + config.CalOffset);
           console.log('Show BT: ' + config.ShowBT);
@@ -488,7 +564,6 @@ function fetchWeather(loc) {
             "sun_set_hour":sunset.getHours(),
             "sun_set_min":sunset.getMinutes(),
             "auto_daymode":auto_daymode,
-            "update_interval":config.UpdateInterval,
             "first_day":config.FirstDay,
             "cal_offset":config.CalOffset,
             "show_bt":config.ShowBT,

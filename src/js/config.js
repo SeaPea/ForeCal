@@ -332,7 +332,7 @@ module.exports = [
         "type": "toggle",
         "appKey": "QTVibes",
         "label": "Vibrate on BT Disconnect/Connect during Quiet Time",
-        "defaultValue": false,
+        "defaultValue": true,
         "attributes": {
           "required": "required"
         }
