@@ -1,6 +1,6 @@
 // Clay Configuration definition
 
-var APP_VER = "v2.10";
+var APP_VER = "v3.0";
 module.exports = [
   {
     "type": "section",
@@ -315,7 +315,7 @@ module.exports = [
       },
       {
         "type": "select",
-        "appKey": "QTStartMin",
+        "appKey": "QTEndMin",
         "defaultValue": "30",
         "label": "End Minute",
         "options": [

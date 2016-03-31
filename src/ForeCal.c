@@ -4,7 +4,7 @@
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
-#define SAVE_VER 3
+#define SAVE_VER 4
 #define MAX_RETRIES 3
 #define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
@@ -100,6 +100,14 @@ enum MessageKey {
   DATE_FORMAT_KEY = 23,
   SHOW_WIND_KEY = 24,
   WIND_SPEED_KEY = 25,
+  FORECAST_HOUR_KEY = 26,
+  FORECAST_MIN_KEY = 27,
+  QT_START_HOUR_KEY = 28,
+  QT_START_MIN_KEY = 29,
+  QT_END_HOUR_KEY = 30,
+  QT_END_MIN_KEY = 31,
+  QT_BT_VIBES_KEY = 32,
+  QT_FETCH_WEATHER_KEY = 33,
   WEATHER_FETCHED_KEY = 99
 };
 
@@ -480,6 +488,30 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       strncpy(s_savedata.wind_speed, new_tuple->value->cstring, sizeof(s_savedata.wind_speed));
       text_layer_set_text(wind_speed_layer, s_savedata.wind_speed);
       break;
+    case FORECAST_HOUR_KEY:
+      s_savedata.forecast_hour = new_tuple->value->uint8;
+      break;
+    case FORECAST_MIN_KEY:
+      s_savedata.forecast_min = new_tuple->value->uint8;
+      break;
+    case QT_START_HOUR_KEY:
+      s_savedata.qt_start_hour = new_tuple->value->uint8;
+      break;
+    case QT_START_MIN_KEY:
+      s_savedata.qt_start_min = new_tuple->value->uint8;
+      break;
+    case QT_END_HOUR_KEY:
+      s_savedata.qt_end_hour = new_tuple->value->uint8;
+      break;
+    case QT_END_MIN_KEY:
+      s_savedata.qt_end_min = new_tuple->value->uint8;
+      break;
+    case QT_BT_VIBES_KEY:
+      s_savedata.qt_bt_vibes = (new_tuple->value->uint8 == 1);
+      break;
+    case QT_FETCH_WEATHER_KEY:
+      s_savedata.qt_fetch_weather = (new_tuple->value->uint8 == 1);
+      break;
     case WEATHER_FETCHED_KEY:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "WEATHER FETCHED: %d", new_tuple->value->uint8);
       if (new_tuple->value->uint8 == 1) {
@@ -503,20 +535,56 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
   }
 }
 
+// Calculates whether tomorrows forecast should be showing
+static bool show_forecast_tomorrow() {
+  time_t curr_time = time(NULL);
+  struct tm *t = localtime(&curr_time);
+
+  return (t->tm_hour > s_savedata.forecast_hour ||
+      (t->tm_hour == s_savedata.forecast_hour && t->tm_min >= s_savedata.forecast_min));
+}
+
+// Calculates whether quiet time is active
+static bool quiet_time_active() {
+  time_t curr_time = time(NULL);
+  struct tm *t = localtime(&curr_time);
+  
+  if ((s_savedata.qt_start_hour * 60) + s_savedata.qt_start_min >
+      (s_savedata.qt_end_hour * 60) + s_savedata.qt_end_min) {
+    // Quiet Time runs over midnight
+    return ((t->tm_hour > s_savedata.qt_start_hour || 
+             (t->tm_hour == s_savedata.qt_start_hour && t->tm_min >= s_savedata.qt_start_min)) ||
+            (t->tm_hour < s_savedata.qt_end_hour ||
+             (t->tm_hour == s_savedata.qt_end_hour && t->tm_min <= s_savedata.qt_end_min)));
+  } else {
+    // Quiet Time starts and ends on same day
+    return ((t->tm_hour > s_savedata.qt_start_hour || 
+             (t->tm_hour == s_savedata.qt_start_hour && t->tm_min >= s_savedata.qt_start_min)) &&
+            (t->tm_hour < s_savedata.qt_end_hour ||
+             (t->tm_hour == s_savedata.qt_end_hour && t->tm_min <= s_savedata.qt_end_min)));
+  }
+}
+
 // Handle clock change events
-static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
+static void handle_tick(struct tm *t, TimeUnits units_changed) {
   if ((units_changed & MINUTE_UNIT) != 0) {
     clock_copy_time_string(current_time, sizeof(current_time));
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
-    // Update the weather every 60 minutes
-    if (!loading && (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= 3600))) {
-      // Record the time when the update attempt started without seconds
-      last_update_attempt = time(NULL);
-      last_update_attempt -= last_update_attempt % 60;
-      update_weather(); 
+    // Update the weather every 60 minutes as long as quiet time is not active or set to continue fetching during quiet time
+    if (!loading && (!quiet_time_active() || s_savedata.qt_fetch_weather)) {
+      if (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= 3600)) {
+        // Record the time when the update attempt started without seconds and request weather update
+        last_update_attempt = time(NULL);
+        last_update_attempt -= last_update_attempt % 60;
+        update_weather(); 
+      } else if ((t->tm_hour == 0 && t->tm_min == 0) || 
+                 (t->tm_hour == s_savedata.forecast_hour && t->tm_min == s_savedata.forecast_min)) {
+        // Request weather update anyway, which should just switch the forecast day without making web requests
+        update_weather(); 
+      }
     }
-    update_sun_layer(tick_time);
+    update_sun_layer(t);
   }
   if ((units_changed & HOUR_UNIT) != 0) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Hour changed");
@@ -525,7 +593,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
       text_layer_set_text(pm_layer, "");
     }
     else {
-      if (tick_time->tm_hour >= 12) {
+      if (t->tm_hour >= 12) {
         text_layer_set_text(pm_layer, "PM");
       }
       else {
@@ -535,7 +603,7 @@ static void handle_tick(struct tm *tick_time, TimeUnits units_changed) {
   }
   if ((units_changed & DAY_UNIT) != 0) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Day changed");
-    update_date(tick_time);
+    update_date(t);
     // Trigger redraw of calendar
     layer_mark_dirty(cal_layer);
   }
@@ -559,8 +627,9 @@ static void update_bt_icon(bool connected) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "BT DISCONNECTED");
     layer_set_hidden(bitmap_layer_get_layer(bt_layer), true);
     
-    if (!loading && s_savedata.bt_vibes) {
+    if (!loading && s_savedata.bt_vibes && (!quiet_time_active() || s_savedata.qt_bt_vibes)) {
       // Play long vibe pattern on BT disconnect
+      // as long as not during Quiet Time or else set to vibe during Quiet Time
       VibePattern pat = {
         .durations = bt_warn_pattern,
         .num_segments = ARRAY_LENGTH(bt_warn_pattern),
@@ -592,7 +661,8 @@ static void handle_bt_update(bool connected) {
     
     if (!loading) {
       // If wasn't connected for at least 15 seconds, play short vibe on reconnecting
-      if (!bt_connected && s_savedata.bt_vibes) vibes_short_pulse();
+      // as long as not during Quiet Time or else set to vibe during Quiet Time
+      if (!bt_connected && s_savedata.bt_vibes && (!quiet_time_active() || s_savedata.qt_bt_vibes)) vibes_short_pulse();
       
       // If reconnected after last weather update failed, try updating the weather again in 5 seconds
       if (last_error) app_timer_register(5000, handle_reconnect_delay, NULL);
@@ -818,88 +888,25 @@ static void window_load(Window *window) {
   s_savedata.show_wind = false;
   s_savedata.wind_speed[0] = '\0';
   s_savedata.last_update = 0;
+  s_savedata.forecast_hour = 18;
+  s_savedata.forecast_min = 0;
+  s_savedata.qt_start_hour = 0;
+  s_savedata.qt_start_min = 15;
+  s_savedata.qt_end_hour = 6;
+  s_savedata.qt_end_min = 30;
+  s_savedata.qt_bt_vibes = true;
+  s_savedata.qt_fetch_weather = false;
   
   if (persist_exists(SAVE_VER_KEY)) {
-    // Save version 2 added date_format, show_wind, wind_speed
-    // Save version 3 added last_update
+    // Save version 4 reset config
     if (persist_exists(SAVEDATA_KEY)) {
       switch (persist_read_int(SAVE_VER_KEY)) {
-        case 1:
-          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - 
-                            (sizeof(s_savedata.date_format) + sizeof(s_savedata.show_wind) + 
-                             sizeof(s_savedata.wind_speed) + sizeof(s_savedata.last_update)));
-          // Reinit the new settings just to be sure
-          s_savedata.date_format = 0;
-          s_savedata.show_wind = false;
-          s_savedata.wind_speed[0] = '\0';
-          s_savedata.last_update = 0;
-          break;
-        case 2:
-          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - sizeof(s_savedata.last_update));
-          // Reinit the new settings just to be sure
-          s_savedata.last_update = 0;
+        case 4:
         default:
           persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
           break;
       }
     } 
-  }
-  else {
-    if (persist_exists(SHOW_BT_KEY))
-      s_savedata.show_bt = (persist_read_int(SHOW_BT_KEY) == 1);
-    
-    if (persist_exists(SHOW_BATT_KEY))
-      s_savedata.show_batt = (persist_read_int(SHOW_BATT_KEY) == 1);
-    
-    if (persist_exists(CAL_FIRST_DAY_KEY))
-      s_savedata.startday = persist_read_int(CAL_FIRST_DAY_KEY);
-    
-    if (persist_exists(CAL_OFFSET_KEY))
-      s_savedata.cal_offset = persist_read_int(CAL_OFFSET_KEY);
-    
-    if (persist_exists(WEATHER_DAYMODE_KEY))
-      s_savedata.daymode = (persist_read_int(WEATHER_DAYMODE_KEY) == 1);
-    
-    // Get previously fetched results in case of comm error and use as initial values
-    if (persist_exists(WEATHER_STATUS_KEY))
-      persist_read_string(WEATHER_STATUS_KEY, s_savedata.status, sizeof(s_savedata.status));
-    
-    if (persist_exists(WEATHER_CURR_TEMP_KEY)) {
-      persist_read_string(WEATHER_CURR_TEMP_KEY, s_savedata.curr_temp, sizeof(s_savedata.curr_temp));
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Stored Current Temp: %s", s_savedata.curr_temp);
-    } else {
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Current temp not stored");
-    }
-    
-    if (persist_exists(WEATHER_FORECAST_DAY_KEY))
-      persist_read_string(WEATHER_FORECAST_DAY_KEY, s_savedata.forecast_day, sizeof(s_savedata.forecast_day));
-    
-    if (persist_exists(WEATHER_HIGH_TEMP_KEY))
-      persist_read_string(WEATHER_HIGH_TEMP_KEY, s_savedata.high_temp, sizeof(s_savedata.high_temp));
-    
-    if (persist_exists(WEATHER_LOW_TEMP_KEY))
-      persist_read_string(WEATHER_LOW_TEMP_KEY, s_savedata.low_temp, sizeof(s_savedata.low_temp));
-    
-    if (persist_exists(WEATHER_ICON_KEY))
-      s_savedata.icon = persist_read_int(WEATHER_ICON_KEY);
-    
-    if (persist_exists(WEATHER_CONDITION_KEY))
-      persist_read_string(WEATHER_CONDITION_KEY, s_savedata.condition, sizeof(s_savedata.condition));
-    
-    if (persist_exists(WEATHER_SUN_RISE_HOUR_KEY))
-      s_savedata.sun_rise_hour = persist_read_int(WEATHER_SUN_RISE_HOUR_KEY);
-    
-    if (persist_exists(WEATHER_SUN_RISE_MIN_KEY))
-      s_savedata.sun_rise_min = persist_read_int(WEATHER_SUN_RISE_MIN_KEY);
-    
-    if (persist_exists(WEATHER_SUN_SET_HOUR_KEY))
-      s_savedata.sun_set_hour = persist_read_int(WEATHER_SUN_SET_HOUR_KEY);
-    
-    if (persist_exists(WEATHER_SUN_SET_MIN_KEY))
-      s_savedata.sun_set_min = persist_read_int(WEATHER_SUN_SET_MIN_KEY);
-    
-    if (persist_exists(WEATHER_AUTO_DAYMODE_KEY))
-      s_savedata.auto_daymode = (persist_read_int(WEATHER_AUTO_DAYMODE_KEY) == 1);
   }
   
   GRect bounds = layer_get_bounds(window_layer); 
@@ -1076,8 +1083,9 @@ static void window_load(Window *window) {
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
   
   // If it has been longer than 60 minutes since last update or last update is not known
-  // then we need to run an update
-  bool need_update = (s_savedata.last_update == 0 || ((temp - s_savedata.last_update) >= 3600) );
+  // or we're not showing the correct forecast day then we need to run an update
+  bool need_update = (s_savedata.last_update == 0 || ((temp - s_savedata.last_update) >= 3600) ||
+                     strcmp(s_savedata.forecast_day, show_forecast_tomorrow() ? "Tomorrow" : "Today") != 0);
   
   // Initialize weather data UI
   Tuplet initial_values[] = {

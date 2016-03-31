@@ -34,7 +34,6 @@ typedef struct savedata {
     uint8_t sun_set_hour;
     uint8_t sun_set_min;
     bool auto_daymode;
-    uint8_t update_interval;
     uint8_t startday;
     uint8_t cal_offset;
     bool show_bt;
@@ -44,4 +43,12 @@ typedef struct savedata {
     bool show_wind;
     char wind_speed[8];
     time_t last_update;
+    uint8_t forecast_hour;
+    uint8_t forecast_min;
+    uint8_t qt_start_hour;
+    uint8_t qt_start_min;
+    uint8_t qt_end_hour;
+    uint8_t qt_end_min;
+    bool qt_bt_vibes;
+    bool qt_fetch_weather;
  } __attribute__((__packed__)) savedata_t;

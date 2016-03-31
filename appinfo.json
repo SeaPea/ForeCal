@@ -10,10 +10,18 @@
         "daymode": 8,
         "first_day": 16,
         "forecast_day": 3,
+        "forecast_hour": 26,
+        "forecast_min": 27,
         "high_temp": 4,
         "icon": 6,
         "loc_changed": 21,
         "low_temp": 5,
+        "qt_bt_vibes": 32,
+        "qt_end_hour": 30,
+        "qt_end_min": 31,
+        "qt_fetch_weather": 33,
+        "qt_start_hour": 28,
+        "qt_start_min": 29,
         "show_batt": 19,
         "show_bt": 18,
         "show_wind": 24,
@@ -193,7 +201,7 @@
         "chalk"
     ],
     "uuid": "36ad0db1-03e6-4a33-bcda-15e92a541ffc",
-    "versionLabel": "2.10",
+    "versionLabel": "3.0",
     "watchapp": {
         "watchface": true
     }
