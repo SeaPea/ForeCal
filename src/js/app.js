@@ -12,11 +12,10 @@ var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
 var lastStationId = null;
-var locChanged = 0;
 var time24hr = true;
 var lastUpdate = null;
 var lastForecastUpdate = null;
-var lastUnits = 'imperial';
+var lastUnits = 'metric';
 
 var config = { 
   ColorScheme: 'Auto',
@@ -66,8 +65,20 @@ function saveSettings() {
   if (DEBUG) console.log('Saving settings');
   
   var refreshW = false;
-  
   var saved = null;
+  
+  // Correct data types passed back from Clay config
+  config.FirstDay = parseInt(config.FirstDay);
+  config.CalOffset = parseInt(config.CalOffset);
+  config.DateFormat = parseInt(config.DateFormat);
+  config.ForecastHour = parseInt(config.ForecastHour);
+  config.ForecastMin = parseInt(config.ForecastMin);
+  config.QTStartHour = parseInt(config.QTStartHour);
+  config.QTStartMin = parseInt(config.QTStartMin);
+  config.QTEndHour = parseInt(config.QTEndHour);
+  config.QTEndMin = parseInt(config.QTEndMin);
+  
+  // Get previously saved config for comparison
   try {
     if (localStorage.getItem('config')) saved = JSON.parse(localStorage.getItem('config'));
   } catch(ex) {}
@@ -81,6 +92,7 @@ function saveSettings() {
     daymode = 1;
   }
   
+  // Check for changes that should force a weather refresh
   if (saved) {
     if (saved.ColorScheme !== null) {
       if (saved.ColorScheme == 'Auto' && config.ColorScheme != 'Auto') refreshW = true;
@@ -115,7 +127,6 @@ function saveSettings() {
   } else {
     if (DEBUG) {
       console.log('Sending settings...');
-      console.log('Update Interval: ' + config.UpdateInterval);
       console.log('First Day: ' + config.FirstDay);
       console.log('Calendar Offset: ' + config.CalOffset);
       console.log('Daymode: ' + daymode);
@@ -130,7 +141,7 @@ function saveSettings() {
       console.log('Quiet Time Fetch Weather: ' + config.QTFetch);
     }
     
-    // Send misc settings to the Pebble
+    // Send only misc settings to the Pebble if no weather refresh needed
     Pebble.sendAppMessage({
       "first_day":config.FirstDay,
       "cal_offset":config.CalOffset,
@@ -290,7 +301,7 @@ function refreshWeather() {
     fetchWeather("q=" + encodeURIComponent(config.WeatherLoc));
   } else {
     // Trigger weather refresh by fetching location
-    if (DEBUG) config.WeatherLoc('Getting GPS location for weather');
+    if (DEBUG) console.log('Getting GPS location for weather');
     navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
   }
   
@@ -305,7 +316,7 @@ function fetchWeather(loc) {
   var curr_time = new Date();
   
   var country, city, status, units, tempUnit, speedUnit;
-  var curr_temp, sunrise, sunset;
+  var curr_temp, sunrise, sunset, locChanged = 0, stationId = 0;
   var forecast_day, forecast_date, high, low, icon, condition;
   var auto_daymode, windspeed, weather_time;
   var today, tomorrow, forecast;
@@ -316,16 +327,19 @@ function fetchWeather(loc) {
     // Between set time and Midnight, show tomorrow's forecast
     forecast_day = 'Tomorrow';
     forecast_date = addDays(new Date(), 1);
-    forecast = localStorage.getItem('forecastTomorrow');
+    forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
   } else {
     // At all other times, show today's forecast
     forecast_day = 'Today';
     forecast_date = new Date();
-    forecast = localStorage.getItem('forecastToday');
+    forecast = JSON.parse(localStorage.getItem('forecastToday'));
   }
   
+  // Setup HTTP requests for current weather data and forecast data
   var reqCurrent = new XMLHttpRequest();
   var reqForecast = new XMLHttpRequest();
+  
+  // First HTTP is triggered at the end of this function...
   
   reqCurrent.onload = function(e) {
     if (reqCurrent.readyState == 4) {
@@ -348,6 +362,11 @@ function fetchWeather(loc) {
         if (!d.cod) {
           Pebble.sendAppMessage({
             "city":"Err: Unknown Data", // Show error briefly
+            "weather_fetched":0});
+          return;
+        } else if (d.cod == "404") {
+          Pebble.sendAppMessage({
+            "city":"Loc. Not Found", // Show error briefly
             "weather_fetched":0});
           return;
         } else if (d.cod != "200") {
@@ -404,6 +423,11 @@ function fetchWeather(loc) {
           return;
         }
         
+        stationId = d.id;
+        locChanged = (stationId == lastStationId ? 0 : 1);
+        localStorage.setItem("lastStationId", lastStationId);
+        localStorage.setItem('lastUpdate', curr_time.toISOString());
+        
         // Get current temperature
         curr_temp = Math.round(d.main.temp).toString() + tempUnit;
         windspeed = Math.round(d.wind.speed) + speedUnit;
@@ -440,8 +464,6 @@ function fetchWeather(loc) {
           }
         }
         
-        localStorage.setItem('lastUpdate', curr_time.toISOString());
-        
         // Set the status display on the Pebble to the time of the weather update
         if (time24hr) {
           status = 'Upd: ' + curr_time.getHours() + ':' + 
@@ -452,10 +474,10 @@ function fetchWeather(loc) {
             (curr_time.getHours() >= 12 ? 'PM' : 'AM');
         }
         
-        if (!lastForecastUpdate || ((curr_time - lastForecastUpdate) / 60000) >= 175) {
-          // Now get the forecast data if last fetch was more than 3 hours ago  
+        if (locChanged == 1 || !lastForecastUpdate || ((curr_time - lastForecastUpdate) / 60000) >= 175) {
+          // Now get the forecast data if last fetch was more than 3 hours ago or the station has changed
           
-          reqForecast.open('GET', 'http://api.openweathermap.org/data/2.5/forecast?' + loc + '&units=' + units + '&appid=' + API_KEY, true);
+          reqForecast.open('GET', 'http://api.openweathermap.org/data/2.5/forecast?id=' + stationId + '&units=' + units + '&appid=' + API_KEY, true);
           reqForecast.send(null);
           
         } else {
@@ -510,15 +532,27 @@ function fetchWeather(loc) {
               "qt_end_min":config.QTEndMin,
               "qt_bt_vibes":config.QTVibes,
               "qt_fetch_weather":config.QTFetch,
+              "forecast_day":forecast_day,
+              "high_temp":(forecast.high == -999 ? "" : Math.round(forecast.high) + tempUnit),
+              "low_temp":(forecast.low == 999 ? "" : Math.round(forecast.low) + tempUnit),
+              "icon":(forecast.low == -1 ? 0 : forecast.code),
+              "condition":forecast.condition,
               "weather_fetched":1});
         }
         
       } else {
         console.warn("Error: " + reqCurrent.status);
         
-        Pebble.sendAppMessage({
-            "city":"Err: " + reqCurrent.status, // Show error briefly
-            "weather_fetched":0});
+        if (reqCurrent.status == 429) {
+          // Server thinks we have made too many requests too quickly
+          Pebble.sendAppMessage({
+              "city":"Try later", // Show error briefly
+              "weather_fetched":0});
+        } else {
+          Pebble.sendAppMessage({
+              "city":"Err: " + reqCurrent.status, // Show error briefly
+              "weather_fetched":0});
+        }
       }
     }
   };
@@ -558,35 +592,59 @@ function fetchWeather(loc) {
         today = { high: -999, low: 999, code: -1, condition: "" };
         tomorrow = { high: -999, low: 999, code: -1, condition: "" };
         
-        // Use 6am tomorrow as the end of the weather data for today (shows low for today as the next overnight low)
+        // Use 6am tomorrow as the end of the high/low weather data for today (shows low for today as the next overnight low)
         var todayEnd = new Date(curr_time);
-        todayEnd.setHours(29, 0, 0, 0);
+        todayEnd.setHours(30, 0, 0, 0);
+        // Use 6pm today as the end of the condition weather data for today if more than 12 hours away
+        var todayEndCondition = new Date(curr_time);
+        todayEndCondition.setHours(18, 0, 0, 0);
         
-        // Use 6am after tomorrow as the end of the weather data for tomorrow
+        // Use 6am after tomorrow as the end of the high/low weather data for tomorrow
         var tomorrowEnd = addDays(todayEnd, 1);
-        var code;
+        // Use 6pm tomorrow as the end of the condition weather data for tomorrow
+        var tomorrowEndCondition = addDays(todayEndCondition, 1);
+        
+        if (DEBUG) {
+          console.log('Today End: ' + todayEnd);
+          console.log('Today End Condition: ' + todayEndCondition);
+          console.log('Tomorrow End: ' + tomorrowEnd);
+          console.log('Tomorrow End Condition: ' + tomorrowEndCondition);
+        }
+        
+        var code, forecastTime;
         
         for (var i = 0; i < d.list.length; i++) {
-          if (unixUTC2Local(d.list[i].dt) < todayEnd) {
-            // Get high/low and condition for today
+          forecastTime = unixUTC2Local(d.list[i].dt);
+          if (forecastTime < todayEnd) {
+            // Get high/low for today
+            if (DEBUG) console.log("Today Forecast: " + forecastTime + ", High: " + d.list[i].main.temp_max + ", Low: " + d.list[i].main.temp_min);
             if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
             if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
-            for (var j = 0; j < d.list[i].weather.length; j++) {
-              code = codeFromWeatherId(d.list[i].weather[j].id);
-              if (code > today.code) {
-                today.code = code;
-                today.condition = d.list[i].weather[j].description;
+            if (forecastTime <= todayEndCondition || ((forecastTime - curr_time) / 3600000) <= 12 ) {
+              // If earlier than 6pm today or less than 12 hours in future get weather condition for today
+              for (var j = 0; j < d.list[i].weather.length; j++) {
+                if (DEBUG) console.log("Today Forecast: " + forecastTime + ", Condition: " + d.list[i].weather[j].id + " - " + d.list[i].weather[j].description);
+                code = codeFromWeatherId(d.list[i].weather[j].id);
+                if (code > today.code) {
+                  today.code = code;
+                  today.condition = d.list[i].weather[j].description;
+                }
               }
             }
-          } else if (unixUTC2Local(d.list[i].dt) < tomorrowEnd) {
-            // Get high/low and condition for today
+          } else if (forecastTime < tomorrowEnd) {
+            // Get high/low for tomorrow
+            if (DEBUG) console.log("Tomorrow Forecast: " + forecastTime + ", High: " + d.list[i].main.temp_max + ", Low: " + d.list[i].main.temp_min);
             if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
             if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
-            for (var k = 0; k < d.list[i].weather.length; k++) {
-              code = codeFromWeatherId(d.list[i].weather[k].id);
-              if (code > tomorrow.code) {
-                tomorrow.code = code;
-                tomorrow.condition = d.list[i].weather[k].description;
+            if (forecastTime <= tomorrowEndCondition) {
+              // If earlier than 6pm tomorrow get weather condition for tomorrow
+              for (var k = 0; k < d.list[i].weather.length; k++) {
+                if (DEBUG) console.log("Tomorrow Forecast: " + forecastTime + ", Condition: " + d.list[i].weather[k].id + " - " + d.list[i].weather[k].description);
+                code = codeFromWeatherId(d.list[i].weather[k].id);
+                if (code > tomorrow.code) {
+                  tomorrow.code = code;
+                  tomorrow.condition = d.list[i].weather[k].description;
+                }
               }
             }
           } else {
@@ -594,17 +652,17 @@ function fetchWeather(loc) {
           }
         }
         
-        localStorage.setItem("forecastToday", today);
-        localStorage.setItem("forecastTomorrow", tomorrow);
+        localStorage.setItem("forecastToday", JSON.stringify(today));
+        localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
         
         if (forecast_date.getDate() == curr_time.getDate())
           forecast = today;
         else
           forecast = tomorrow;
         
-        high = Math.round(forecast.high) + tempUnit;
-        low = Math.round(forecast.low) + tempUnit;
-        icon = forecast.code;
+        high = (forecast.high == -999 ? "" : Math.round(forecast.high) + tempUnit);
+        low = (forecast.low == 999 ? "" : Math.round(forecast.low) + tempUnit);
+        icon = (forecast.low == -1 ? 0 : forecast.code);
         condition = forecast.condition;
         
         if (DEBUG) {
@@ -671,21 +729,40 @@ function fetchWeather(loc) {
       } else {
         console.warn("Error: " + reqForecast.status);
         
-        Pebble.sendAppMessage({
-            "city":"Err: " + reqForecast.status, // Show error briefly
-            "weather_fetched":0});
+        if (reqForecast.status == 429) {
+          // Server thinks we have made too many requests too quickly
+          Pebble.sendAppMessage({
+              "city":"Try later", // Show error briefly
+              "weather_fetched":0});
+        } else {
+          Pebble.sendAppMessage({
+              "city":"Err: " + reqForecast.status, // Show error briefly
+              "weather_fetched":0});
+        }
       }
     }
   };
   
-  if (lastUpdate && ((curr_time - lastUpdate) / 60000) < 55 && forecast) {
+  if (DEBUG) {
+    console.log('Last update: ' + lastUpdate);
+    console.log('Forecast data: ' + JSON.stringify(forecast));
+    console.log('Mins since last update: ' + ((curr_time - lastUpdate) / 60000));
+  }
+  
+  if (lastUpdate && forecast && ((curr_time - lastUpdate) / 60000) < 55) {
     // If less than 1 hour (use 55 minutes to account for any timestamp differences) and we have forecast data saved
     // then return the forecast data so the correct day forecast is shown at midnight and the forecast hour
+    
+    if (lastUnits == 'imperial')
+      tempUnit = '\u00B0' + 'F';
+    else
+      tempUnit = '\u00B0' + 'C';
+    
     Pebble.sendAppMessage({
       "forecast_day":forecast_day,
-      "high_temp":forecast.high,
-      "low_temp":forecast.low,
-      "icon":forecast.code,
+      "high_temp":(forecast.high == -999 ? "" : Math.round(forecast.high) + tempUnit),
+      "low_temp":(forecast.low == 999 ? "" : Math.round(forecast.low) + tempUnit),
+      "icon":(forecast.low == -1 ? 0 : forecast.code),
       "condition":forecast.condition});
     
   } else {

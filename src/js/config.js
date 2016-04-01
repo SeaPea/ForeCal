@@ -7,7 +7,7 @@ module.exports = [
     "items": [
       {
         "type": "heading",
-        "defaultValue": "Appearance"
+        "defaultValue": "Appearance/Misc."
       },
       {
         "type": "select",
@@ -158,7 +158,7 @@ module.exports = [
             "value": "Auto" 
           },
           { 
-            "label": "Celcius, km/h",
+            "label": "Celcius, m/s",
             "value": "C" 
           },
           { 

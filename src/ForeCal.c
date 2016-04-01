@@ -489,9 +489,11 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       text_layer_set_text(wind_speed_layer, s_savedata.wind_speed);
       break;
     case FORECAST_HOUR_KEY:
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "FORECAST HOUR: %d", new_tuple->value->uint8);
       s_savedata.forecast_hour = new_tuple->value->uint8;
       break;
     case FORECAST_MIN_KEY:
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "FORECAST MIN: %d", new_tuple->value->uint8);
       s_savedata.forecast_min = new_tuple->value->uint8;
       break;
     case QT_START_HOUR_KEY:
@@ -529,13 +531,14 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         s_savedata.last_update = last_update_attempt;
       }
       last_update_attempt = 0;
+      break;
     default:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Unknown App Message Key: %d", (int)key);
       break;
   }
 }
 
-// Calculates whether tomorrows forecast should be showing
+// Calculates whether tomorrow's forecast should be showing
 static bool show_forecast_tomorrow() {
   time_t curr_time = time(NULL);
   struct tm *t = localtime(&curr_time);
@@ -930,7 +933,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(pm_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(pm_layer));
   
-  date_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(55, 30, 89, 26), GRect((bounds.size.w-89)/2, 2, 89, 26)));
+  date_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(54, 30, 89, 26), GRect((bounds.size.w-89)/2, 2, 89, 26)));
   text_layer_set_text_color(date_layer, GColorWhite);
   text_layer_set_background_color(date_layer, GColorClear);
   text_layer_set_font(date_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
@@ -1113,6 +1116,14 @@ static void window_load(Window *window) {
     TupletInteger(DATE_FORMAT_KEY, s_savedata.date_format),
     TupletInteger(SHOW_WIND_KEY, s_savedata.show_wind ? 1 : 0),
     MyTupletCString(WIND_SPEED_KEY, s_savedata.wind_speed),
+    TupletInteger(FORECAST_HOUR_KEY, s_savedata.forecast_hour),
+    TupletInteger(FORECAST_MIN_KEY, s_savedata.forecast_min),
+    TupletInteger(QT_START_HOUR_KEY, s_savedata.qt_start_hour),
+    TupletInteger(QT_START_MIN_KEY, s_savedata.qt_start_min),
+    TupletInteger(QT_END_HOUR_KEY, s_savedata.qt_end_hour),
+    TupletInteger(QT_END_MIN_KEY, s_savedata.qt_end_min),
+    TupletInteger(QT_BT_VIBES_KEY, s_savedata.qt_bt_vibes),
+    TupletInteger(QT_FETCH_WEATHER_KEY, s_savedata.qt_fetch_weather),
     TupletInteger(WEATHER_FETCHED_KEY, 0)
   };
   
