@@ -316,10 +316,10 @@ function fetchWeather(loc) {
   var curr_time = new Date();
   
   var country, city, status, units, tempUnit, speedUnit;
-  var curr_temp, sunrise, sunset, locChanged = 0, stationId = 0;
+  var curr_temp, curr_temp_val, sunrise, sunset, locChanged = 0, stationId = 0;
   var forecast_day, forecast_date, high, low, icon, condition;
   var auto_daymode, windspeed, weather_time;
-  var today, tomorrow, forecast;
+  var today, tomorrow, forecast, max_temp_diff;
   
   if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour || 
                                     (curr_time.getHours() == config.ForecastHour && 
@@ -392,24 +392,29 @@ function fetchWeather(loc) {
         
         if (!config.TempUnit || config.TempUnit === '' || config.TempUnit === 'Auto') {
           // Determine temperature and wind-speed units from country code 
-          // (US gets F and mph, everyone else gets C and km/h)
+          // (US gets F and mph, everyone else gets C and m/s)
           if (country == 'US') {
             units = 'imperial';
             tempUnit = '\u00B0' + 'F';
             speedUnit = 'mph';
+            max_temp_diff = 9; // This is used to ignore erroneous temp ranges when summarizing 3-hour forecast data into daily 
+                               // forecasts. For some reason OpenWeatherMap forecast data sometimes has temp spikes that cannot possibly be real.
           } else {
             units = 'metric';
             tempUnit = '\u00B0' + 'C';
             speedUnit = 'm/s';
+            max_temp_diff = 5;
           }
         } else {
           tempUnit = '\u00B0' + config.TempUnit;
           if (config.TempUnit == 'F') {
             units = 'imperial';
             speedUnit = 'mph';
+            max_temp_diff = 9;
           } else {
             units = 'metric';
             speedUnit = 'm/s';
+            max_temp_diff = 5;
           }
         }
         
@@ -425,10 +430,12 @@ function fetchWeather(loc) {
         
         stationId = d.id;
         locChanged = (stationId == lastStationId ? 0 : 1);
-        localStorage.setItem("lastStationId", lastStationId);
+        lastStationId = stationId;
+        localStorage.setItem("lastStationId", stationId);
         localStorage.setItem('lastUpdate', curr_time.toISOString());
         
-        // Get current temperature
+        // Get current condtion
+        curr_temp_val = d.main.temp;
         curr_temp = Math.round(d.main.temp).toString() + tempUnit;
         windspeed = Math.round(d.wind.speed) + speedUnit;
         
@@ -617,9 +624,24 @@ function fetchWeather(loc) {
           forecastTime = unixUTC2Local(d.list[i].dt);
           if (forecastTime < todayEnd) {
             // Get high/low for today
+            if (today.high == -999) today.high = curr_temp_val;
+            if (today.low == 999) today.low = curr_temp_val;
             if (DEBUG) console.log("Today Forecast: " + forecastTime + ", High: " + d.list[i].main.temp_max + ", Low: " + d.list[i].main.temp_min);
-            if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
-            if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
+            
+            // While the temp_max and temp_min of teh 3-hour data is normally the high and low respectively for the 3 hours,
+            // for some reason sometimes the max and min are way out of range and the min is actually the high, etc, hence the max diff check
+            if (Math.abs(d.list[i].main.temp_max - today.high) <= max_temp_diff) {
+              if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
+            } else {
+              if (d.list[i].main.temp_min > today.high) today.high = d.list[i].main.temp_min;
+            }
+            
+            if (Math.abs(d.list[i].main.temp_min - today.low) <= max_temp_diff) {
+              if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
+            } else {
+              if (d.list[i].main.temp_max < today.low) today.low = d.list[i].main.temp_max;
+            }
+            
             if (forecastTime <= todayEndCondition || ((forecastTime - curr_time) / 3600000) <= 12 ) {
               // If earlier than 6pm today or less than 12 hours in future get weather condition for today
               for (var j = 0; j < d.list[i].weather.length; j++) {
@@ -633,9 +655,39 @@ function fetchWeather(loc) {
             }
           } else if (forecastTime < tomorrowEnd) {
             // Get high/low for tomorrow
+            
+            // Start with the last high./low from today
+            if (tomorrow.high == -999) {
+              if (today.high == -999) 
+                tomorrow.high = curr_temp_val;
+              else
+                tomorrow.high = d.list[i-1].main.temp_max;
+            }
+            if (tomorrow.low == 999) {
+              if (today.low == 999) 
+                tomorrow.low = curr_temp_val;
+              else
+                tomorrow.low = d.list[i-1].main.temp_min;
+            }
+            
             if (DEBUG) console.log("Tomorrow Forecast: " + forecastTime + ", High: " + d.list[i].main.temp_max + ", Low: " + d.list[i].main.temp_min);
-            if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
-            if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
+            
+            // While the temp_max and temp_min of teh 3-hour data is normally the high and low respectively for the 3 hours,
+            // for some reason sometimes the max and min are way out of range and the min is actually the high, etc, hence the max diff check
+            if (Math.abs(d.list[i].main.temp_max - tomorrow.high) <= max_temp_diff) {
+              if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
+            } else {
+              if (d.list[i].main.temp_min > tomorrow.high) tomorrow.high = d.list[i].main.temp_min;
+            }
+            
+            if (Math.abs(d.list[i].main.temp_min - tomorrow.low) <= max_temp_diff) {
+              if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
+            } else {
+              if (d.list[i].main.temp_max < tomorrow.low) tomorrow.low = d.list[i].main.temp_max;
+            }
+            
+            if (DEBUG) console.log("Tomorrow - running high: " + tomorrow.high + ", running low: " + tomorrow.low);
+            
             if (forecastTime <= tomorrowEndCondition) {
               // If earlier than 6pm tomorrow get weather condition for tomorrow
               for (var k = 0; k < d.list[i].weather.length; k++) {
@@ -806,6 +858,13 @@ Pebble.addEventListener("webviewclosed",
                          function(e) {
                            if (DEBUG) console.log("Webview closed");
                            if (e.response) {
+                             if (DEBUG) console.log("Raw settings returned: " + e.response);
+                             try {
+                               JSON.parse(e.response); // Test for Pebble app difference (iOS doesn't need decodeURIComponent, Android does)
+                               config = clay.getSettings(e.response);
+                             } catch(ex) {
+                               config = clay.getSettings(decodeURIComponent(e.response));
+                             }
                              config = clay.getSettings(e.response);
                              if (DEBUG) console.log("Settings returned: " + JSON.stringify(config));
                              saveSettings();
