@@ -307,7 +307,7 @@ function refreshWeather() {
   
 }
 
-// Fetch the weather data from Yahoo and transmit to Pebble
+// Fetch the weather data from web service and transmit to Pebble
 function fetchWeather(loc) {
   
   if (DEBUG) console.log("### FETCHING WEATHER ###");
@@ -332,7 +332,12 @@ function fetchWeather(loc) {
     // At all other times, show today's forecast
     forecast_day = 'Today';
     forecast_date = new Date();
-    forecast = JSON.parse(localStorage.getItem('forecastToday'));
+    if (lastUpdate && lastUpdate.getDate() != curr_time.getDate())
+      // If last update and current time are different days, we just crossed over midnight so show tomorrow forecast, but call it 'today'
+      // to save all users trying to update at midnight and causing requests to hit limit
+      forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
+    else
+      forecast = JSON.parse(localStorage.getItem('forecastToday'));
   }
   
   // Setup HTTP requests for current weather data and forecast data

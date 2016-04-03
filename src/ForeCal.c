@@ -72,6 +72,7 @@ static AppTimer *retry_timer = NULL;
 static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
 static time_t last_update_attempt;
+static bool qt_delay = false;
 
 // App Message Keys for Tuples transferred from Javascript
 enum MessageKey {
@@ -568,25 +569,45 @@ static bool quiet_time_active() {
   }
 }
 
+// Calculates the Quiet Time duration in seconds
+static uint16_t quiet_time_duration() {
+  uint16_t qt_start = (s_savedata.qt_start_hour * 60) + s_savedata.qt_start_min;
+  uint16_t qt_end = (s_savedata.qt_end_hour * 60) + s_savedata.qt_end_min;
+  if (qt_start > qt_end)
+    return (((24*60) - qt_start) + qt_end) * 60;
+  else
+    return (qt_end - qt_start) * 60;
+}
+
 // Handle clock change events
 static void handle_tick(struct tm *t, TimeUnits units_changed) {
   if ((units_changed & MINUTE_UNIT) != 0) {
     clock_copy_time_string(current_time, sizeof(current_time));
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
+    
     // Update the weather every 60 minutes as long as quiet time is not active or set to continue fetching during quiet time
-    if (!loading && (!quiet_time_active() || s_savedata.qt_fetch_weather)) {
-      if (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= 3600)) {
-        // Record the time when the update attempt started without seconds and request weather update
-        last_update_attempt = time(NULL);
-        last_update_attempt -= last_update_attempt % 60;
-        update_weather(); 
-      } else if ((t->tm_hour == 0 && t->tm_min == 0) || 
-                 (t->tm_hour == s_savedata.forecast_hour && t->tm_min == s_savedata.forecast_min)) {
-        // Request weather update anyway, which should just switch the forecast day without making web requests
-        update_weather(); 
+    if (!loading) {
+      if (s_savedata.qt_fetch_weather || !quiet_time_active()) {
+        if (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= 3600 + (qt_delay ? quiet_time_duration() : 0))) {
+          // Record the time when the update attempt started without seconds and request weather update
+          last_update_attempt = time(NULL);
+          last_update_attempt -= last_update_attempt % 60;
+          update_weather(); 
+          qt_delay = false;
+        } else if ((t->tm_hour == 0 && t->tm_min == 0) || 
+                   (t->tm_hour == s_savedata.forecast_hour && t->tm_min == s_savedata.forecast_min)) {
+          // Request weather update at midnight and the forecast today/tomorrow transition, which should just switch the forecast day without making web requests
+          update_weather(); 
+        }
+      } else {
+        // Quiet time active. Record if next update was going to be during Quiet Time so we know to extend next update after Quiet Time by the duration
+        // of the Quiet Time so that we don't have all users updating weather at the end of Quiet Time which may be left as default in many cases.
+        if (s_savedata.last_update != 0 || ((time(NULL) - s_savedata.last_update) >= 3600)) 
+          qt_delay = true;
       }
-    }
+    } 
+    
     update_sun_layer(t);
   }
   if ((units_changed & HOUR_UNIT) != 0) {
