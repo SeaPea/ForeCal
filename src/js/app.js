@@ -1,4 +1,4 @@
-var DEBUG = false;
+var DEBUG = true;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
 // APPLY FOR YOUR OWN KEY at OpenWeatherMap.org
@@ -94,6 +94,10 @@ function saveSettings() {
   
   // Check for changes that should force a weather refresh
   if (saved) {
+    if (DEBUG) {
+      console.log('Saved Config: ' + JSON.stringify(saved));
+      console.log('New Config: ' + JSON.stringify(config));
+    }
     if (saved.ColorScheme !== null) {
       if (saved.ColorScheme == 'Auto' && config.ColorScheme != 'Auto') refreshW = true;
     }
@@ -116,6 +120,7 @@ function saveSettings() {
   if (refreshW) {
     if (DEBUG) console.log('Refreshing weather after changing settings');
     localStorage.removeItem("lastStationId");
+    localStorage.removeItem("lastCity");
     localStorage.removeItem("lastUpdate");
     localStorage.removeItem("lastForecastUpdate");
     localStorage.removeItem("forecastToday");
@@ -279,6 +284,18 @@ function unixUTC2Local(unixTime) {
   return d;
 }
 
+// Gets a time string from a JS date object
+function timeStr(time) {
+  if (time24hr) {
+    return time.getHours() + ':' + 
+      (time.getMinutes() < 10 ? '0' : '') + time.getMinutes();
+  } else {
+    return (((time.getHours() + 11) % 12) + 1) + ':' + 
+      (time.getMinutes() < 10 ? '0' : '') + time.getMinutes() +
+      (time.getHours() >= 12 ? 'PM' : 'AM');
+  }
+}
+
 function locationSuccess(pos) {
   // Got our Lat/Long so now fetch the weather data
   var coordinates = pos.coords;
@@ -437,6 +454,7 @@ function fetchWeather(loc) {
         locChanged = (stationId == lastStationId ? 0 : 1);
         lastStationId = stationId;
         localStorage.setItem("lastStationId", stationId);
+        localStorage.setItem("lastCity", city);
         localStorage.setItem('lastUpdate', curr_time.toISOString());
         
         // Get current condtion
@@ -477,14 +495,7 @@ function fetchWeather(loc) {
         }
         
         // Set the status display on the Pebble to the time of the weather update
-        if (time24hr) {
-          status = 'Upd: ' + curr_time.getHours() + ':' + 
-            (curr_time.getMinutes() < 10 ? '0' : '') + curr_time.getMinutes();
-        } else {
-          status = 'Upd: ' + (((curr_time.getHours() + 11) % 12) + 1) + ':' + 
-            (curr_time.getMinutes() < 10 ? '0' : '') + curr_time.getMinutes() +
-            (curr_time.getHours() >= 12 ? 'PM' : 'AM');
-        }
+        status = 'Upd:' + timeStr(curr_time);
         
         if (locChanged == 1 || !lastForecastUpdate || ((curr_time - lastForecastUpdate) / 60000) >= 175) {
           // Now get the forecast data if last fetch was more than 3 hours ago or the station has changed
@@ -815,7 +826,14 @@ function fetchWeather(loc) {
     else
       tempUnit = '\u00B0' + 'C';
     
+    if (localStorage.getItem('lastCity')) 
+      city = localStorage.getItem('lastCity');
+    else
+      city = "";
+    
     Pebble.sendAppMessage({
+      "status":"Upd:" + timeStr(lastUpdate),
+      "city":city,
       "forecast_day":forecast_day,
       "high_temp":(forecast.high == -999 ? "" : Math.round(forecast.high) + tempUnit),
       "low_temp":(forecast.low == 999 ? "" : Math.round(forecast.low) + tempUnit),
@@ -870,7 +888,6 @@ Pebble.addEventListener("webviewclosed",
                              } catch(ex) {
                                config = clay.getSettings(decodeURIComponent(e.response));
                              }
-                             config = clay.getSettings(e.response);
                              if (DEBUG) console.log("Settings returned: " + JSON.stringify(config));
                              saveSettings();
                            }

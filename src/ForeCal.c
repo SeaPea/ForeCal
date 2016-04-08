@@ -1154,6 +1154,7 @@ static void window_load(Window *window) {
   
   if (need_update) {
     last_update_attempt = temp - (temp % 60);
+    s_savedata.last_update = last_update_attempt;
     
     // Fire timer 2 seconds after the app_sync_init to mark everything 
     // as loaded once the initial tuple callback is done and init the first real weather update
