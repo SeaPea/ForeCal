@@ -1,6 +1,6 @@
 // Clay Configuration definition
 
-var APP_VER = "v3.2";
+var APP_VER = "v3.3";
 module.exports = [
   {
     "type": "section",
@@ -37,37 +37,25 @@ module.exports = [
         "type": "toggle",
         "appKey": "ShowBT",
         "label": "Show Bluetooth Status",
-        "defaultValue": true,
-        "attributes": {
-          "required": "required"
-        }
+        "defaultValue": true
       },
       {
         "type": "toggle",
         "appKey": "BTVibes",
         "label": "Vibrate on Connect/Disconnect",
-        "defaultValue": true,
-        "attributes": {
-          "required": "required"
-        }
+        "defaultValue": true
       },
       {
         "type": "toggle",
         "appKey": "ShowBatt",
         "label": "Show Battery Status",
-        "defaultValue": true,
-        "attributes": {
-          "required": "required"
-        }
+        "defaultValue": true
       },
       {
         "type": "toggle",
         "appKey": "ShowWind",
         "label": "Show wind speed instead of day name",
-        "defaultValue": false,
-        "attributes": {
-          "required": "required"
-        }
+        "defaultValue": false
       },
       {
         "type": "select",
@@ -332,19 +320,13 @@ module.exports = [
         "type": "toggle",
         "appKey": "QTVibes",
         "label": "Vibrate on BT Disconnect/Connect during Quiet Time",
-        "defaultValue": true,
-        "attributes": {
-          "required": "required"
-        }
+        "defaultValue": true
       },
       {
         "type": "toggle",
         "appKey": "QTFetch",
         "label": "Fetch weather during Quiet Time",
-        "defaultValue": false,
-        "attributes": {
-          "required": "required"
-        }
+        "defaultValue": false
       }
     ]
   },
