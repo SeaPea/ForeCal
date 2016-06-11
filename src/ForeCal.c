@@ -978,7 +978,7 @@ static void window_load(Window *window) {
   curr_temp_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, 30, 45, 26), GRect((bounds.size.w-45)/2, 150, 45, 26)));
   text_layer_set_text_color(curr_temp_layer, GColorWhite);
   text_layer_set_background_color(curr_temp_layer, GColorClear);
-  text_layer_set_font(curr_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+  text_layer_set_font(curr_temp_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
   text_layer_set_text_alignment(curr_temp_layer, PBL_IF_RECT_ELSE(GTextAlignmentLeft, GTextAlignmentCenter));
   text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));

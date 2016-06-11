@@ -1,6 +1,6 @@
 // Clay Configuration definition
 
-var APP_VER = "v3.3";
+var APP_VER = "v3.4";
 module.exports = [
   {
     "type": "section",

@@ -4,8 +4,8 @@ var DEBUG = false;
 // APPLY FOR YOUR OWN KEY at OpenWeatherMap.org
 var API_KEY = "106caae1620867404688360dcbd4bb3e";
 
-var Clay = require('clay');
-var clayConfig = require('config');
+var Clay = require('./clay');
+var clayConfig = require('./config');
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 
 
@@ -204,7 +204,7 @@ function codeFromWeatherId(weatherId) {
     case 751: //sand 
     case 761: //dust
     case 762: //volcanic ash
-      return 7; //Low Visility
+      return 7; //Low Visibility
     case 300: //light intensity drizzle
     case 301: //drizzle 
     case 302: //heavy intensity drizzle
@@ -294,6 +294,53 @@ function timeStr(time) {
       (time.getMinutes() < 10 ? '0' : '') + time.getMinutes() +
       (time.getHours() >= 12 ? 'PM' : 'AM');
   }
+}
+
+function t24HTo12(hours) {
+  if ((hours) > 12)
+    return hours-12;
+  else
+    return hours;
+}
+
+// Converts 24 hour start and end times to a range in 12 hour text format
+function timeRange2Text(startHour, endHour) {
+  if (startHour < 12 && endHour < 12) {
+    return startHour + '-' + endHour + 'am';
+  } else if (startHour >= 12 && endHour >= 12) {
+    return t24HTo12(startHour) + '-' + t24HTo12(endHour) + 'pm';
+  } else {
+    return (startHour < 12 ? startHour + 'am' : t24HTo12(startHour) + 'pm') + '-' + 
+      (endHour < 12 ? endHour + 'am' : t24HTo12(endHour) + 'pm');
+  }
+}
+
+// Converts an array of times from the 3 hour forecast into the shortest text string
+// showing when the condition applies
+function conditionTimes2Text(times) {
+  var text = '';
+  var ranges = [];
+  
+  // Start with 1st 3 hour time range
+  if (times.length >= 1) ranges = [{startHour: times[0], endHour: (times[0]+3)%24}];
+  
+  // Consolidate sequential time ranges
+  for (var i = 1; i < times.length; i++) {
+    if (ranges[ranges.length-1].endHour == times[i])
+      // Extend last range for continuous time range
+      ranges[ranges.length-1].endHour = (ranges[ranges.length-1].endHour+3)%24;
+    else
+      // Add new range for disjointed time range
+      ranges.push({startHour: times[i], endHour: (times[i]+3)%24});
+  }
+  
+  // Convert time ranges to text
+  for (var j = 0; j < ranges.length; j++) {
+    if (text) text += ',';
+    text += timeRange2Text(ranges[j].startHour, ranges[j].endHour);
+  }
+  
+  return (text ? ' ' + text : '');
 }
 
 function locationSuccess(pos) {
@@ -634,7 +681,9 @@ function fetchWeather(loc) {
           console.log('Tomorrow End Condition: ' + tomorrowEndCondition);
         }
         
-        var code, forecastTime;
+        var code, forecastTime, useLow4HighToday, useHigh4LowToday, useLow4HighTmrrw, useHigh4LowTmrrw;
+        var today_cond_times = [];
+        var tmrrw_cond_times = [];
         
         for (var i = 0; i < d.list.length; i++) {
           forecastTime = unixUTC2Local(d.list[i].dt);
@@ -646,26 +695,36 @@ function fetchWeather(loc) {
             
             // While the temp_max and temp_min of teh 3-hour data is normally the high and low respectively for the 3 hours,
             // for some reason sometimes the max and min are way out of range and the min is actually the high, etc, hence the max diff check
-            if (Math.abs(d.list[i].main.temp_max - today.high) <= max_temp_diff) {
+            if (!useLow4HighToday && Math.abs(d.list[i].main.temp_max - today.high) <= max_temp_diff) {
               if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
             } else {
+              // Temps seem way out of range, so use the 3 hour low for today's high
+              useLow4HighToday = true;
               if (d.list[i].main.temp_min > today.high) today.high = d.list[i].main.temp_min;
             }
             
-            if (Math.abs(d.list[i].main.temp_min - today.low) <= max_temp_diff) {
+            if (!useHigh4LowToday && Math.abs(d.list[i].main.temp_min - today.low) <= max_temp_diff) {
               if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
             } else {
+              // Temps seem way out of range, so use the 3 hour high for today's low
+              useHigh4LowToday = true;
               if (d.list[i].main.temp_max < today.low) today.low = d.list[i].main.temp_max;
             }
             
             if (forecastTime <= todayEndCondition || ((forecastTime - curr_time) / 3600000) <= 12 ) {
-              // If earlier than 6pm today or less than 12 hours in future get weather condition for today
+              // If earlier than 6pm today or less than 12 hours in future get 'worst' weather condition for today
+              // where 'worst' is defined by the order of the condition codes (higher = worse)
               for (var j = 0; j < d.list[i].weather.length; j++) {
                 if (DEBUG) console.log("Today Forecast: " + forecastTime + ", Condition: " + d.list[i].weather[j].id + " - " + d.list[i].weather[j].description);
                 code = codeFromWeatherId(d.list[i].weather[j].id);
                 if (code > today.code) {
                   today.code = code;
                   today.condition = d.list[i].weather[j].description;
+                  // If condition is drizzle or worse (rain, storms, etc) and is worst so far, save first time for adding to description below
+                  if (code >= 8) today_cond_times = [forecastTime.getHours()];
+                } else if (code == today.code) {
+                  // If condition is same as worst code and is drizzle or worse, add time for description
+                  if (code >= 8) today_cond_times.push(forecastTime.getHours());
                 }
               }
             }
@@ -690,28 +749,38 @@ function fetchWeather(loc) {
             
             // While the temp_max and temp_min of teh 3-hour data is normally the high and low respectively for the 3 hours,
             // for some reason sometimes the max and min are way out of range and the min is actually the high, etc, hence the max diff check
-            if (Math.abs(d.list[i].main.temp_max - tomorrow.high) <= max_temp_diff) {
+            if (!useLow4HighTmrrw && Math.abs(d.list[i].main.temp_max - tomorrow.high) <= max_temp_diff) {
               if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
             } else {
+              // Temps seem way out of range, so use the 3 hour low for tomorrow's high
+              useLow4HighTmrrw = true;
               if (d.list[i].main.temp_min > tomorrow.high) tomorrow.high = d.list[i].main.temp_min;
             }
             
-            if (Math.abs(d.list[i].main.temp_min - tomorrow.low) <= max_temp_diff) {
+            if (!useHigh4LowTmrrw && Math.abs(d.list[i].main.temp_min - tomorrow.low) <= max_temp_diff) {
               if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
             } else {
+              // Temps seem way out of range, so use the 3 hour high for tomorrow's low
+              useHigh4LowTmrrw = true;
               if (d.list[i].main.temp_max < tomorrow.low) tomorrow.low = d.list[i].main.temp_max;
             }
             
             if (DEBUG) console.log("Tomorrow - running high: " + tomorrow.high + ", running low: " + tomorrow.low);
             
             if (forecastTime <= tomorrowEndCondition) {
-              // If earlier than 6pm tomorrow get weather condition for tomorrow
+              // If earlier than 6pm tomorrow get 'worst' weather condition for tomorrow
+              // where 'worst' is defined by the order of the condition codes (higher = worse)
               for (var k = 0; k < d.list[i].weather.length; k++) {
                 if (DEBUG) console.log("Tomorrow Forecast: " + forecastTime + ", Condition: " + d.list[i].weather[k].id + " - " + d.list[i].weather[k].description);
                 code = codeFromWeatherId(d.list[i].weather[k].id);
                 if (code > tomorrow.code) {
                   tomorrow.code = code;
                   tomorrow.condition = d.list[i].weather[k].description;
+                  // If condition is drizzle or worse (rain, storms, etc) and is worst so far, save first time for adding to description below
+                  if (code >= 8) tmrrw_cond_times = [forecastTime.getHours()];
+                } else if (code == tomorrow.code) {
+                  // If condition is same as worst code and is drizzle or worse, add time for description
+                  if (code >= 8) tmrrw_cond_times.push(forecastTime.getHours());
                 }
               }
             }
@@ -719,6 +788,10 @@ function fetchWeather(loc) {
             break;  
           }
         }
+        
+        // Add condition times for any forecasts of drizzle or worse
+        today.condition += conditionTimes2Text(today_cond_times);
+        tomorrow.condition += conditionTimes2Text(tmrrw_cond_times);
         
         localStorage.setItem("forecastToday", JSON.stringify(today));
         localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
