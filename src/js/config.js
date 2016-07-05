@@ -54,6 +54,7 @@ module.exports = [
       {
         "type": "toggle",
         "appKey": "ShowWind",
+        "capabilities": ["NOT_ROUND"],
         "label": "Show wind speed instead of day name",
         "defaultValue": false
       },
@@ -75,6 +76,21 @@ module.exports = [
         "attributes": {
           "required": "required"
         }
+      },
+      {
+        "type": "toggle",
+        "appKey": "ShowWeek",
+        "label": "Show Week Number",
+        "description": "Displays instead of the AM/PM indicator when 12 hour clock is selected.",
+        "defaultValue": false
+      },
+      {
+        "type": "toggle",
+        "appKey": "ShowSteps",
+        "capabilities": ["HEALTH"],
+        "label": "Show Steps Progress",
+        "description": "Displays as a progress bar for average steps behind the Today/Tomorrow bar.",
+        "defaultVaue": false
       }
     ]
   },
@@ -98,40 +114,14 @@ module.exports = [
         }
       },
       {
-        "type": "select",
-        "appKey": "ForecastHour",
-        "defaultValue": "18",
-        "label": "Show tomorrow's forecast after hour",
-        "options": [
-          { "label": "13", "value": "13"  },
-          { "label": "14", "value": "14"  },
-          { "label": "15", "value": "15"  },
-          { "label": "16", "value": "16"  },
-          { "label": "17", "value": "17"  },
-          { "label": "18", "value": "18"  },
-          { "label": "19", "value": "19"  },
-          { "label": "20", "value": "20"  },
-          { "label": "21", "value": "21"  },
-          { "label": "22", "value": "22"  },
-          { "label": "23", "value": "23"  },
-          { "label": "00", "value": "0"  }
-        ],
+        "type": "input",
+        "appKey": "ForecastTime",
+        "defaultValue": "18:00",
+        "label": "Show tomorrow's forecast after",
         "attributes": {
-          "required": "required"
-        }
-      },
-      {
-        "type": "select",
-        "appKey": "ForecastMin",
-        "defaultValue": "0",
-        "label": "...and minute",
-        "options": [
-          { "label": "00", "value": "0"  },
-          { "label": "15", "value": "15"  },
-          { "label": "30", "value": "30"  },
-          { "label": "45", "value": "45"  }
-        ],
-        "attributes": {
+          "type": "time",
+          "min": "13:00",
+          "max": "00:00",
           "required": "required"
         }
       },
@@ -217,102 +207,26 @@ module.exports = [
         "defaultValue": "Quiet Time"
       },
       {
-        "type": "select",
-        "appKey": "QTStartHour",
-        "defaultValue": "0",
-        "label": "Start Hour",
-        "options": [
-          { "label": "1", "value": "1"  },
-          { "label": "2", "value": "2"  },
-          { "label": "3", "value": "3"  },
-          { "label": "4", "value": "4"  },
-          { "label": "5", "value": "5"  },
-          { "label": "6", "value": "6"  },
-          { "label": "7", "value": "7"  },
-          { "label": "8", "value": "8"  },
-          { "label": "9", "value": "9"  },
-          { "label": "10", "value": "10"  },
-          { "label": "11", "value": "11"  },
-          { "label": "12", "value": "12"  },
-          { "label": "13", "value": "13"  },
-          { "label": "14", "value": "14"  },
-          { "label": "15", "value": "15"  },
-          { "label": "16", "value": "16"  },
-          { "label": "17", "value": "17"  },
-          { "label": "18", "value": "18"  },
-          { "label": "19", "value": "19"  },
-          { "label": "20", "value": "20"  },
-          { "label": "21", "value": "21"  },
-          { "label": "22", "value": "22"  },
-          { "label": "23", "value": "23"  },
-          { "label": "00", "value": "0"  }
-        ],
+        "type": "input",
+        "appKey": "QTStart",
+        "defaultValue": "00:15",
+        "label": "Start",
         "attributes": {
+          "type": "time",
+          "min": "00:00",
+          "max": "23:59",
           "required": "required"
         }
       },
       {
-        "type": "select",
-        "appKey": "QTStartMin",
-        "defaultValue": "15",
-        "label": "Start Minute",
-        "options": [
-          { "label": "00", "value": "0"  },
-          { "label": "15", "value": "15"  },
-          { "label": "30", "value": "30"  },
-          { "label": "45", "value": "45"  }
-        ],
+        "type": "input",
+        "appKey": "QTEnd",
+        "defaultValue": "06:30",
+        "label": "End",
         "attributes": {
-          "required": "required"
-        }
-      },
-      {
-        "type": "select",
-        "appKey": "QTEndHour",
-        "defaultValue": "6",
-        "label": "End Hour",
-        "options": [
-          { "label": "1", "value": "1"  },
-          { "label": "2", "value": "2"  },
-          { "label": "3", "value": "3"  },
-          { "label": "4", "value": "4"  },
-          { "label": "5", "value": "5"  },
-          { "label": "6", "value": "6"  },
-          { "label": "7", "value": "7"  },
-          { "label": "8", "value": "8"  },
-          { "label": "9", "value": "9"  },
-          { "label": "10", "value": "10"  },
-          { "label": "11", "value": "11"  },
-          { "label": "12", "value": "12"  },
-          { "label": "13", "value": "13"  },
-          { "label": "14", "value": "14"  },
-          { "label": "15", "value": "15"  },
-          { "label": "16", "value": "16"  },
-          { "label": "17", "value": "17"  },
-          { "label": "18", "value": "18"  },
-          { "label": "19", "value": "19"  },
-          { "label": "20", "value": "20"  },
-          { "label": "21", "value": "21"  },
-          { "label": "22", "value": "22"  },
-          { "label": "23", "value": "23"  },
-          { "label": "00", "value": "0"  }
-        ],
-        "attributes": {
-          "required": "required"
-        }
-      },
-      {
-        "type": "select",
-        "appKey": "QTEndMin",
-        "defaultValue": "30",
-        "label": "End Minute",
-        "options": [
-          { "label": "00", "value": "0"  },
-          { "label": "15", "value": "15"  },
-          { "label": "30", "value": "30"  },
-          { "label": "45", "value": "45"  }
-        ],
-        "attributes": {
+          "type": "time",
+          "min": "00:00",
+          "max": "23:59",
           "required": "required"
         }
       },

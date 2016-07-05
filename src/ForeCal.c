@@ -4,7 +4,7 @@
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
-#define SAVE_VER 4
+#define SAVE_VER 5
 #define MAX_RETRIES 3
 #define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
@@ -16,6 +16,7 @@ static bool loading = false;
 static Layer *current_layer = NULL;
 static TextLayer *clock_layer = NULL;
 static TextLayer *pm_layer = NULL;
+static TextLayer *week_layer = NULL;
 static TextLayer *date_layer = NULL;
 static AppTimer *bt_timer = NULL;
 static GBitmap *bt_icon = NULL;
@@ -59,6 +60,7 @@ static uint8_t sync_buffer[512];
 
 static char current_time[] = "00:00";
 static char current_date[] = "Sun Jan 01";
+static char current_week[4] = "";
 
 static savedata_t s_savedata;
 static int prev_daytime = 99;
@@ -109,6 +111,8 @@ enum MessageKey {
   QT_END_MIN_KEY = 31,
   QT_BT_VIBES_KEY = 32,
   QT_FETCH_WEATHER_KEY = 33,
+  SHOW_WEEK_KEY = 34,
+  SHOW_STEPS_KEY = 35,
   WEATHER_FETCHED_KEY = 99
 };
 
@@ -469,6 +473,13 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Show Battery: %d", s_savedata.show_batt);
       layer_set_hidden(bitmap_layer_get_layer(batt_layer), !s_savedata.show_batt);
       break;
+    case SHOW_WEEK_KEY:
+      s_savedata.show_week = (new_tuple->value->uint8 == 1);
+      layer_set_hidden(text_layer_get_layer(week_layer), !s_savedata.show_week);
+      if (s_savedata.show_week) text_layer_set_text(pm_layer, "");
+      break;
+    case SHOW_STEPS_KEY:
+      break;
     case LOC_CHANGED_KEY:
       if (!loading && (int)new_tuple->value->uint8 == 1) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Forcing sun layer update");
@@ -613,7 +624,7 @@ static void handle_tick(struct tm *t, TimeUnits units_changed) {
   if ((units_changed & HOUR_UNIT) != 0) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Hour changed");
     retry_count_hourly = 0;
-    if (clock_is_24h_style()) {
+    if (clock_is_24h_style() || s_savedata.show_week) {
       text_layer_set_text(pm_layer, "");
     }
     else {
@@ -628,6 +639,8 @@ static void handle_tick(struct tm *t, TimeUnits units_changed) {
   if ((units_changed & DAY_UNIT) != 0) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Day changed");
     update_date(t);
+    strftime(current_week, sizeof(current_week), "w%V", t);
+    text_layer_set_text(week_layer, current_week);
     // Trigger redraw of calendar
     layer_mark_dirty(cal_layer);
   }
@@ -920,12 +933,17 @@ static void window_load(Window *window) {
   s_savedata.qt_end_min = 30;
   s_savedata.qt_bt_vibes = true;
   s_savedata.qt_fetch_weather = false;
+  s_savedata.show_week = false;
+  s_savedata.show_steps = false;
   
   if (persist_exists(SAVE_VER_KEY)) {
     // Save version 4 reset config
     if (persist_exists(SAVEDATA_KEY)) {
       switch (persist_read_int(SAVE_VER_KEY)) {
         case 4:
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.show_week)+sizeof(s_savedata.show_steps)));
+          break;
+        case 5:
         default:
           persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
           break;
@@ -953,6 +971,14 @@ static void window_load(Window *window) {
   text_layer_set_text_alignment(pm_layer, GTextAlignmentCenter);
   text_layer_set_overflow_mode(pm_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(pm_layer));
+  
+  week_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(122, 23, 24, 15), GRect(bounds.size.w-((bounds.size.w-120)/2), 48, 24, 15)));
+  text_layer_set_text_color(week_layer, GColorWhite);
+  text_layer_set_background_color(week_layer, GColorClear);
+  text_layer_set_font(week_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
+  text_layer_set_text_alignment(week_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(week_layer, GTextOverflowModeFill);
+  layer_add_child(current_layer, text_layer_get_layer(week_layer));
   
   date_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(54, 30, 89, 26), GRect((bounds.size.w-89)/2, 2, 89, 26)));
   text_layer_set_text_color(date_layer, GColorWhite);
@@ -983,7 +1009,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(curr_temp_layer, GTextOverflowModeFill);
   layer_add_child(current_layer, text_layer_get_layer(curr_temp_layer));
   
-  wind_speed_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(40, 34, 45, 26), GRect(46, 5, 45, 26)));
+  wind_speed_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(45, 34, 45, 26), GRect((bounds.size.w-60)/2, 5, 45, 26)));
   text_layer_set_text_color(wind_speed_layer, GColorWhite);
   text_layer_set_background_color(wind_speed_layer, GColorClear);
   text_layer_set_font(wind_speed_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
@@ -991,6 +1017,7 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(wind_speed_layer, GTextOverflowModeFill);
   layer_set_hidden(text_layer_get_layer(wind_speed_layer), !s_savedata.show_wind);
 #ifndef PBL_ROUND
+  // Only add for rectangular Pebbles (no room in round design)
   layer_add_child(current_layer, text_layer_get_layer(wind_speed_layer));
 #endif
   
@@ -1132,6 +1159,8 @@ static void window_load(Window *window) {
     TupletInteger(SHOW_BT_KEY, s_savedata.show_bt ? 1 : 0),
     TupletInteger(BT_VIBES_KEY, s_savedata.bt_vibes ? 1 : 0),
     TupletInteger(SHOW_BATT_KEY, s_savedata.show_batt ? 1 : 0),
+    TupletInteger(SHOW_WEEK_KEY, s_savedata.show_week ? 1 : 0),
+    TupletInteger(SHOW_STEPS_KEY, s_savedata.show_steps ? 1 : 0),
     TupletInteger(TIME_24HR_KEY, clock_is_24h_style() ? 1 : 0),
     TupletInteger(LOC_CHANGED_KEY, 0),
     TupletInteger(DATE_FORMAT_KEY, s_savedata.date_format),

@@ -6,7 +6,8 @@
     "pebble": {
         "capabilities": [
             "location",
-            "configurable"
+            "configurable",
+            "health"
         ],
         "displayName": "ForeCal",
         "enableMultiJS": true,
@@ -35,6 +36,8 @@
             "qt_start_min": 29,
             "show_batt": 19,
             "show_bt": 18,
+            "show_steps": 35,
+            "show_week": 34,
             "show_wind": 24,
             "status": 0,
             "sun_rise_hour": 10,

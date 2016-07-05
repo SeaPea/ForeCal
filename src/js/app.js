@@ -22,6 +22,8 @@ var config = {
   ShowBT: 1,
   BTVibes: 1,
   ShowBatt: 1,
+  ShowWeek: 0,
+  ShowSteps: 0,
   ForecastHour: 18,
   ForecastMin: 0,
   WeatherLoc: '',
@@ -71,12 +73,12 @@ function saveSettings() {
   config.FirstDay = parseInt(config.FirstDay);
   config.CalOffset = parseInt(config.CalOffset);
   config.DateFormat = parseInt(config.DateFormat);
-  config.ForecastHour = parseInt(config.ForecastHour);
-  config.ForecastMin = parseInt(config.ForecastMin);
-  config.QTStartHour = parseInt(config.QTStartHour);
-  config.QTStartMin = parseInt(config.QTStartMin);
-  config.QTEndHour = parseInt(config.QTEndHour);
-  config.QTEndMin = parseInt(config.QTEndMin);
+  config.ForecastHour = parseInt(config.ForecastTime.split(":")[0]);
+  config.ForecastMin = parseInt(config.ForecastTime.split(":")[1]);
+  config.QTStartHour = parseInt(config.QTStart.split(":")[0]);
+  config.QTStartMin = parseInt(config.QTStart.split(":")[1]);
+  config.QTEndHour = parseInt(config.QTEnd.split(":")[0]);
+  config.QTEndMin = parseInt(config.QTEnd.split(":")[1]);
   
   // Get previously saved config for comparison
   try {
@@ -139,6 +141,8 @@ function saveSettings() {
       console.log('Show BT: ' + config.ShowBT);
       console.log('BT Vibes: ' + config.BTVibes);
       console.log('Show Battery: ' + config.ShowBatt);
+      console.log('Show Week: ' + config.ShowWeek);
+      console.log('Show Steps: ' + config.ShowSteps);
       console.log('Forecast time: ' + config.ForecastHour + ':' + config.ForecastMin);
       console.log('Quiet Time Start: ' + config.QTStartHour + ':' + config.QTStartMin);
       console.log('Quiet Time End: ' + config.QTEndHour + ':' + config.QTEndMin);
@@ -155,6 +159,8 @@ function saveSettings() {
       "show_bt":config.ShowBT,
       "bt_vibes":config.BTVibes,
       "show_batt":config.ShowBatt,
+      "show_week":config.ShowWeek,
+      "show_steps":config.ShowSteps,
       "date_format":config.DateFormat,
       "show_wind":config.ShowWind,
       "forecast_hour":config.ForecastHour,
@@ -343,6 +349,37 @@ function conditionTimes2Text(times) {
   return (text ? ' ' + text : '');
 }
 
+// Formats temperature (provided in kelvin) in the last units specified in the settings
+// (if kelvin value is < 150, it assumes we were given the final temp unit instead)
+function formatTemp(kelvin) {
+  try {
+    if (lastUnits == 'metric')
+      return Math.round(kelvin < 150 ? kelvin : kelvin - 273.15) + '\u00B0' + 'C';
+    else if (lastUnits == 'imperial')
+      return Math.round(kelvin < 150 ? kelvin : (((kelvin * 9) / 5) - 459.67)) + '\u00B0' + 'F';
+    else
+      return 'N/A'; 
+  } catch(ex) {
+    if (DEBUG) console.error('formatTemp(' + kelvin + ') Error: ' + ex);
+    return 'ERR';
+  }
+}
+
+// Formats speed (provided in metres per second) in the last units specified in the settings
+function formatSpeed(ms) {
+  try {
+    if (lastUnits == 'metric')
+      return Math.round(ms) + 'm/s';
+    else if (lastUnits == 'imperial')
+      return Math.round(ms * 2.236) + 'mph';
+    else
+      return 'n/a';
+  } catch(ex) {
+    if (DEBUG) console.error('formatSpeed(' + ms + ') Error: ' + ex);
+    return 'err';
+  }
+}
+
 function locationSuccess(pos) {
   // Got our Lat/Long so now fetch the weather data
   var coordinates = pos.coords;
@@ -379,11 +416,11 @@ function fetchWeather(loc) {
   
   var curr_time = new Date();
   
-  var country, city, status, units, tempUnit, speedUnit;
-  var curr_temp, curr_temp_val, sunrise, sunset, locChanged = 0, stationId = 0;
+  var country, city, status, units;
+  var curr_temp, sunrise, sunset, locChanged = 0, stationId = 0;
   var forecast_day, forecast_date, high, low, icon, condition;
   var auto_daymode, windspeed, weather_time;
-  var today, tomorrow, forecast, max_temp_diff;
+  var today, tomorrow, forecast;
   
   if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour || 
                                     (curr_time.getHours() == config.ForecastHour && 
@@ -412,7 +449,7 @@ function fetchWeather(loc) {
   
   reqCurrent.onload = function(e) {
     if (reqCurrent.readyState == 4) {
-      if(reqCurrent.status == 200) {
+      if (reqCurrent.status == 200) {
         // Successfully retrieved current weather data
         
         var d; 
@@ -462,52 +499,29 @@ function fetchWeather(loc) {
         if (!config.TempUnit || config.TempUnit === '' || config.TempUnit === 'Auto') {
           // Determine temperature and wind-speed units from country code 
           // (US gets F and mph, everyone else gets C and m/s)
-          if (country == 'US') {
+          if (country == 'US')
             units = 'imperial';
-            tempUnit = '\u00B0' + 'F';
-            speedUnit = 'mph';
-            max_temp_diff = 9; // This is used to ignore erroneous temp ranges when summarizing 3-hour forecast data into daily 
-                               // forecasts. For some reason OpenWeatherMap forecast data sometimes has temp spikes that cannot possibly be real.
-          } else {
+          else
             units = 'metric';
-            tempUnit = '\u00B0' + 'C';
-            speedUnit = 'm/s';
-            max_temp_diff = 5;
-          }
         } else {
-          tempUnit = '\u00B0' + config.TempUnit;
-          if (config.TempUnit == 'F') {
+          if (config.TempUnit == 'F')
             units = 'imperial';
-            speedUnit = 'mph';
-            max_temp_diff = 9;
-          } else {
+          else
             units = 'metric';
-            speedUnit = 'm/s';
-            max_temp_diff = 5;
-          }
         }
         
-        if (units !== lastUnits) {
-          // If units do not match what API was called with, need to re-fetch weather data with current units
-          if (DEBUG) console.log('Need to re-fetch data with new units: ' + units);
-          lastUnits = units;
-          localStorage.setItem('lastUnits', lastUnits);
-          reqCurrent.open('GET', 'http://api.openweathermap.org/data/2.5/weather?' + loc + '&units=' + units + '&appid=' + API_KEY, true);
-          reqCurrent.send(null);
-          return;
-        }
+        lastUnits = units;
+        localStorage.setItem('lastUnits', lastUnits);
         
         stationId = d.id;
         locChanged = (stationId == lastStationId ? 0 : 1);
         lastStationId = stationId;
         localStorage.setItem("lastStationId", stationId);
         localStorage.setItem("lastCity", city);
-        localStorage.setItem('lastUpdate', curr_time.toISOString());
         
         // Get current condtion
-        curr_temp_val = d.main.temp;
-        curr_temp = Math.round(d.main.temp).toString() + tempUnit;
-        windspeed = Math.round(d.wind.speed) + speedUnit;
+        curr_temp = d.main.temp;
+        windspeed = d.wind.speed;
         
         daymode = 0;
         
@@ -542,12 +556,12 @@ function fetchWeather(loc) {
         }
         
         // Set the status display on the Pebble to the time of the weather update
-        status = 'Upd:' + timeStr(curr_time);
+        status = 'Upd: ' + timeStr(curr_time);
         
         if (locChanged == 1 || !lastForecastUpdate || ((curr_time - lastForecastUpdate) / 60000) >= 175) {
           // Now get the forecast data if last fetch was more than 3 hours ago or the station has changed
           
-          reqForecast.open('GET', 'http://api.openweathermap.org/data/2.5/forecast?id=' + stationId + '&units=' + units + '&appid=' + API_KEY, true);
+          reqForecast.open('GET', 'http://api.openweathermap.org/data/2.5/forecast?id=' + stationId + '&appid=' + API_KEY, true);
           reqForecast.send(null);
           
         } else {
@@ -555,7 +569,7 @@ function fetchWeather(loc) {
           
           if (DEBUG) {
             console.log('Only current weather data fetched...');
-            console.log('Current Temp: ' + curr_temp);
+            console.log('Current Temp: ' + formatTemp(curr_temp));
             console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
             console.log('Sunrise: ' + sunset.getHours() + ':' + sunset.getMinutes());
             console.log('Daymode: ' + daymode);
@@ -565,8 +579,10 @@ function fetchWeather(loc) {
             console.log('Show BT: ' + config.ShowBT);
             console.log('BT Vibes: ' + config.BTVibes);
             console.log('Show Battery: ' + config.ShowBatt);
+            console.log('Show Week: ' + config.ShowWeek);
+            console.log('Show Steps: ' + config.ShowSteps);
             console.log('Location Changed: ' + locChanged);
-            console.log('Wind Speed: ' + windspeed);
+            console.log('Wind Speed: ' + formatSpeed(windspeed));
             console.log('Forecast time: ' + config.ForecastHour + ':' + config.ForecastMin);
             console.log('Quiet Time Start: ' + config.QTStartHour + ':' + config.QTStartMin);
             console.log('Quiet Time End: ' + config.QTEndHour + ':' + config.QTEndMin);
@@ -577,7 +593,7 @@ function fetchWeather(loc) {
           // Send the current weather data and settings to the Pebble
           Pebble.sendAppMessage({
               "status":status,
-              "curr_temp":curr_temp,
+              "curr_temp":formatTemp(curr_temp),
               "daymode":daymode,
               "city":city,
               "sun_rise_hour":sunrise.getHours(),
@@ -590,10 +606,12 @@ function fetchWeather(loc) {
               "show_bt":config.ShowBT,
               "bt_vibes":config.BTVibes,
               "show_batt":config.ShowBatt,
+              "show_week":config.ShowWeek,
+              "show_steps":config.ShowSteps,
               "loc_changed":locChanged,
               "date_format":config.DateFormat,
               "show_wind":config.ShowWind,
-              "wind_speed":windspeed,
+              "wind_speed":formatSpeed(windspeed),
               "forecast_hour":config.ForecastHour,
               "forecast_min":config.ForecastMin,
               "qt_start_hour":config.QTStartHour,
@@ -603,8 +621,8 @@ function fetchWeather(loc) {
               "qt_bt_vibes":config.QTVibes,
               "qt_fetch_weather":config.QTFetch,
               "forecast_day":forecast_day,
-              "high_temp":(forecast.high == -999 ? "" : Math.round(forecast.high) + tempUnit),
-              "low_temp":(forecast.low == 999 ? "" : Math.round(forecast.low) + tempUnit),
+              "high_temp":(forecast.high == -999 ? "" : formatTemp(forecast.high)),
+              "low_temp":(forecast.low == 999 ? "" : formatTemp(forecast.low)),
               "icon":(forecast.low == -1 ? 0 : forecast.code),
               "condition":forecast.condition,
               "weather_fetched":1});
@@ -681,7 +699,7 @@ function fetchWeather(loc) {
           console.log('Tomorrow End Condition: ' + tomorrowEndCondition);
         }
         
-        var code, forecastTime, useLow4HighToday, useHigh4LowToday, useLow4HighTmrrw, useHigh4LowTmrrw;
+        var code, forecastTime;
         var today_cond_times = [];
         var tmrrw_cond_times = [];
         
@@ -689,27 +707,13 @@ function fetchWeather(loc) {
           forecastTime = unixUTC2Local(d.list[i].dt);
           if (forecastTime < todayEnd) {
             // Get high/low for today
-            if (today.high == -999) today.high = curr_temp_val;
-            if (today.low == 999) today.low = curr_temp_val;
-            if (DEBUG) console.log("Today Forecast: " + forecastTime + ", High: " + d.list[i].main.temp_max + ", Low: " + d.list[i].main.temp_min);
+            if (today.high == -999) today.high = curr_temp;
+            if (today.low == 999) today.low = curr_temp;
+            if (DEBUG) console.log("Today Forecast: " + forecastTime + ", High: " + formatTemp(d.list[i].main.temp_max) + ", Low: " + formatTemp(d.list[i].main.temp_min));
             
-            // While the temp_max and temp_min of teh 3-hour data is normally the high and low respectively for the 3 hours,
-            // for some reason sometimes the max and min are way out of range and the min is actually the high, etc, hence the max diff check
-            if (!useLow4HighToday && Math.abs(d.list[i].main.temp_max - today.high) <= max_temp_diff) {
-              if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
-            } else {
-              // Temps seem way out of range, so use the 3 hour low for today's high
-              useLow4HighToday = true;
-              if (d.list[i].main.temp_min > today.high) today.high = d.list[i].main.temp_min;
-            }
+            if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
             
-            if (!useHigh4LowToday && Math.abs(d.list[i].main.temp_min - today.low) <= max_temp_diff) {
-              if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
-            } else {
-              // Temps seem way out of range, so use the 3 hour high for today's low
-              useHigh4LowToday = true;
-              if (d.list[i].main.temp_max < today.low) today.low = d.list[i].main.temp_max;
-            }
+            if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
             
             if (forecastTime <= todayEndCondition || ((forecastTime - curr_time) / 3600000) <= 12 ) {
               // If earlier than 6pm today or less than 12 hours in future get 'worst' weather condition for today
@@ -734,38 +738,24 @@ function fetchWeather(loc) {
             // Start with the last high./low from today
             if (tomorrow.high == -999) {
               if (today.high == -999) 
-                tomorrow.high = curr_temp_val;
+                tomorrow.high = curr_temp;
               else
                 tomorrow.high = d.list[i-1].main.temp_max;
             }
             if (tomorrow.low == 999) {
               if (today.low == 999) 
-                tomorrow.low = curr_temp_val;
+                tomorrow.low = curr_temp;
               else
                 tomorrow.low = d.list[i-1].main.temp_min;
             }
             
-            if (DEBUG) console.log("Tomorrow Forecast: " + forecastTime + ", High: " + d.list[i].main.temp_max + ", Low: " + d.list[i].main.temp_min);
+            if (DEBUG) console.log("Tomorrow Forecast: " + forecastTime + ", High: " + formatTemp(d.list[i].main.temp_max) + ", Low: " + formatTemp(d.list[i].main.temp_min));
             
-            // While the temp_max and temp_min of teh 3-hour data is normally the high and low respectively for the 3 hours,
-            // for some reason sometimes the max and min are way out of range and the min is actually the high, etc, hence the max diff check
-            if (!useLow4HighTmrrw && Math.abs(d.list[i].main.temp_max - tomorrow.high) <= max_temp_diff) {
-              if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
-            } else {
-              // Temps seem way out of range, so use the 3 hour low for tomorrow's high
-              useLow4HighTmrrw = true;
-              if (d.list[i].main.temp_min > tomorrow.high) tomorrow.high = d.list[i].main.temp_min;
-            }
+            if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
             
-            if (!useHigh4LowTmrrw && Math.abs(d.list[i].main.temp_min - tomorrow.low) <= max_temp_diff) {
-              if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
-            } else {
-              // Temps seem way out of range, so use the 3 hour high for tomorrow's low
-              useHigh4LowTmrrw = true;
-              if (d.list[i].main.temp_max < tomorrow.low) tomorrow.low = d.list[i].main.temp_max;
-            }
+            if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
             
-            if (DEBUG) console.log("Tomorrow - running high: " + tomorrow.high + ", running low: " + tomorrow.low);
+            if (DEBUG) console.log("Tomorrow - running high: " + formatTemp(tomorrow.high) + ", running low: " + formatTemp(tomorrow.low));
             
             if (forecastTime <= tomorrowEndCondition) {
               // If earlier than 6pm tomorrow get 'worst' weather condition for tomorrow
@@ -793,6 +783,8 @@ function fetchWeather(loc) {
         today.condition += conditionTimes2Text(today_cond_times);
         tomorrow.condition += conditionTimes2Text(tmrrw_cond_times);
         
+        lastUpdate = new Date(curr_time);
+        localStorage.setItem('lastUpdate', curr_time.toISOString());
         localStorage.setItem("forecastToday", JSON.stringify(today));
         localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
         
@@ -801,13 +793,13 @@ function fetchWeather(loc) {
         else
           forecast = tomorrow;
         
-        high = (forecast.high == -999 ? "" : Math.round(forecast.high) + tempUnit);
-        low = (forecast.low == 999 ? "" : Math.round(forecast.low) + tempUnit);
+        high = (forecast.high == -999 ? "" : formatTemp(forecast.high));
+        low = (forecast.low == 999 ? "" : formatTemp(forecast.low));
         icon = (forecast.low == -1 ? 0 : forecast.code);
         condition = forecast.condition;
         
         if (DEBUG) {
-          console.log('Current Temp: ' + curr_temp);
+          console.log('Current Temp: ' + formatTemp(curr_temp));
           console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
           console.log('Sunrise: ' + sunset.getHours() + ':' + sunset.getMinutes());
           console.log('Forecast Day: ' + forecast_day);
@@ -823,8 +815,10 @@ function fetchWeather(loc) {
           console.log('Show BT: ' + config.ShowBT);
           console.log('BT Vibes: ' + config.BTVibes);
           console.log('Show Battery: ' + config.ShowBatt);
+          console.log('Show Week: ' + config.ShowWeek);
+          console.log('Show Steps: ' + config.ShowSteps);
           console.log('Location Changed: ' + locChanged);
-          console.log('Wind Speed: ' + windspeed);
+          console.log('Wind Speed: ' + formatSpeed(windspeed));
           console.log('Forecast time: ' + config.ForecastHour + ':' + config.ForecastMin);
           console.log('Quiet Time Start: ' + config.QTStartHour + ':' + config.QTStartMin);
           console.log('Quiet Time End: ' + config.QTEndHour + ':' + config.QTEndMin);
@@ -835,7 +829,7 @@ function fetchWeather(loc) {
         // Send the data to the Pebble
         Pebble.sendAppMessage({
             "status":status,
-            "curr_temp":curr_temp,
+            "curr_temp":formatTemp(curr_temp),
             "forecast_day":forecast_day,
             "high_temp":high,
             "low_temp":low,
@@ -853,10 +847,12 @@ function fetchWeather(loc) {
             "show_bt":config.ShowBT,
             "bt_vibes":config.BTVibes,
             "show_batt":config.ShowBatt,
+            "show_week":config.ShowWeek,
+            "show_steps":config.ShowSteps,
             "loc_changed":locChanged,
             "date_format":config.DateFormat,
             "show_wind":config.ShowWind,
-            "wind_speed":windspeed,
+            "wind_speed":formatSpeed(windspeed),
             "forecast_hour":config.ForecastHour,
             "forecast_min":config.ForecastMin,
             "qt_start_hour":config.QTStartHour,
@@ -890,14 +886,9 @@ function fetchWeather(loc) {
     console.log('Mins since last update: ' + ((curr_time - lastUpdate) / 60000));
   }
   
-  if (lastUpdate && forecast && ((curr_time - lastUpdate) / 60000) < 55) {
-    // If less than 1 hour (use 55 minutes to account for any timestamp differences) and we have forecast data saved
+  if (lastUpdate && forecast && ((curr_time - lastUpdate) / 60000) <= 59) {
+    // If less than 1 hour (use 59 minutes to account for any timestamp differences) and we have forecast data saved
     // then return the forecast data so the correct day forecast is shown at midnight and the forecast hour
-    
-    if (lastUnits == 'imperial')
-      tempUnit = '\u00B0' + 'F';
-    else
-      tempUnit = '\u00B0' + 'C';
     
     if (localStorage.getItem('lastCity')) 
       city = localStorage.getItem('lastCity');
@@ -905,17 +896,17 @@ function fetchWeather(loc) {
       city = "";
     
     Pebble.sendAppMessage({
-      "status":"Upd:" + timeStr(lastUpdate),
+      "status":"Upd: " + timeStr(lastUpdate),
       "city":city,
       "forecast_day":forecast_day,
-      "high_temp":(forecast.high == -999 ? "" : Math.round(forecast.high) + tempUnit),
-      "low_temp":(forecast.low == 999 ? "" : Math.round(forecast.low) + tempUnit),
+      "high_temp":(forecast.high == -999 ? "" : formatTemp(forecast.high)),
+      "low_temp":(forecast.low == 999 ? "" : formatTemp(forecast.low)),
       "icon":(forecast.low == -1 ? 0 : forecast.code),
       "condition":forecast.condition});
     
   } else {
     // Initiate HTTP request for curent weather data
-    reqCurrent.open('GET', 'http://api.openweathermap.org/data/2.5/weather?' + loc + '&units=' + lastUnits + '&appid=' + API_KEY, true);
+    reqCurrent.open('GET', 'http://api.openweathermap.org/data/2.5/weather?' + loc + '&appid=' + API_KEY, true);
     reqCurrent.send(null);
   }
 }

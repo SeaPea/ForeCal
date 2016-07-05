@@ -51,4 +51,6 @@ typedef struct savedata {
     uint8_t qt_end_min;
     bool qt_bt_vibes;
     bool qt_fetch_weather;
+    bool show_week;
+    bool show_steps;
  } __attribute__((__packed__)) savedata_t;
