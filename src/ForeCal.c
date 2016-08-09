@@ -28,6 +28,7 @@ static TextLayer *curr_temp_layer = NULL;
 static TextLayer *wind_speed_layer = NULL;
 
 static Layer *forecast_layer = NULL;
+static TextLayer *status_bg_layer = NULL;
 static TextLayer *forecast_day_layer = NULL;
 static TextLayer *status_layer = NULL;
 static AppTimer *weatherinit_timer = NULL;
@@ -75,6 +76,13 @@ static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
 static time_t last_update_attempt;
 static bool qt_delay = false;
+#if (defined(PBL_HEALTH) && defined(PBL_COLOR))
+static Layer *steps_layer = NULL;
+static bool steps_on = false;
+static HealthValue steps_now = 0;
+static HealthValue steps_avg_now = 0;
+static HealthValue steps_avg_day = 0;
+#endif
 
 // App Message Keys for Tuples transferred from Javascript
 enum MessageKey {
@@ -363,6 +371,141 @@ static void update_date(struct tm *t) {
   text_layer_set_text(date_layer, current_date);
 }
 
+#if (defined(PBL_HEALTH) && defined(PBL_COLOR))
+
+// Draw the steps progress bar
+static void draw_steps_progress(struct Layer *layer, GContext *ctx) {
+  if (steps_on && steps_avg_day != 0) {
+    GRect bounds = layer_get_bounds(layer);
+#ifdef PBL_ROUND
+    GRect icon_frame = layer_get_frame(bitmap_layer_get_layer(icon_layer));
+#endif
+    if (steps_now != 0) {
+      graphics_context_set_fill_color(ctx, (s_savedata.daymode ? GColorBlueMoon : GColorVividCerulean));
+#ifdef PBL_ROUND
+      int steps_pos = ((bounds.size.w - icon_frame.size.w) * steps_now) / steps_avg_day;
+      if (steps_pos > icon_frame.origin.x) steps_pos += icon_frame.size.w;
+#else
+      int steps_pos = (bounds.size.w * steps_now) / steps_avg_day;
+#endif
+      graphics_fill_rect(ctx, GRect(0, 0, steps_pos, bounds.size.h), 0, GCornersAll);
+    }
+    if (steps_avg_now != 0) {
+      graphics_context_set_stroke_color(ctx, GColorOrange);
+      graphics_context_set_stroke_width(ctx, 2);
+#ifdef PBL_ROUND
+      int avg_bar = ((bounds.size.w - icon_frame.size.w) * steps_avg_now) / steps_avg_day;
+      if (avg_bar > icon_frame.origin.x) avg_bar += icon_frame.size.w;
+#else
+      int avg_bar = (bounds.size.w * steps_avg_now) / steps_avg_day;
+#endif
+      graphics_draw_line(ctx, GPoint(avg_bar, 0), GPoint(avg_bar, bounds.size.h));
+    }
+  }
+}
+
+// Get all the steps metrics and store in static variables
+static void get_steps() {
+  time_t day_start = time_start_of_today();
+  time_t day_end = day_start + SECONDS_PER_DAY - 1;
+  time_t now = time(NULL);
+  
+  // If the daily average has not been fetched or is being refreshed, get it
+  if (steps_avg_day == 0)
+    steps_avg_day = health_service_sum_averaged(HealthMetricStepCount, day_start, day_end, HealthServiceTimeScopeDailyWeekdayOrWeekend);
+  
+  if (steps_avg_day == 0) {
+    // If the daily average still isn't available, do not show any other metrics
+    steps_avg_now = 0;
+    steps_now = 0;
+  } else {
+    // Get the daily average up to now and the total steps for today
+    steps_avg_now = health_service_sum_averaged(HealthMetricStepCount, day_start, now, HealthServiceTimeScopeDailyWeekdayOrWeekend);
+    steps_now = health_service_sum(HealthMetricStepCount, day_start, now);
+  }
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Get Steps - Daily Avg: %d, Avg to Now: %d, Today's Steps: %d", (int)steps_avg_day, (int)steps_avg_now, (int)steps_now);
+}
+
+// Check if all steps metrics are available
+static bool steps_available() {
+  time_t day_start = time_start_of_today();
+  time_t day_end = day_start + SECONDS_PER_DAY - 1;
+  time_t now = time(NULL);
+  
+  // Check if steps so far today are available
+  if (!(health_service_metric_accessible(HealthMetricStepCount, day_start, now) & HealthServiceAccessibilityMaskAvailable))
+    return false;
+  
+  // Check if daily average for today is available
+  if (!(health_service_metric_averaged_accessible(HealthMetricStepCount, day_start, day_end, HealthServiceTimeScopeDailyWeekdayOrWeekend) & HealthServiceAccessibilityMaskAvailable))
+    return false;
+  
+  // Check if daily average up to now is available
+  if (!(health_service_metric_averaged_accessible(HealthMetricStepCount, day_start, now, HealthServiceTimeScopeDailyWeekdayOrWeekend) & HealthServiceAccessibilityMaskAvailable))
+    return false;
+  
+  // If we get here, all metrics are available
+  return true;
+}
+
+// Called whenever the health service registers an update
+static void steps_update(HealthEventType event, void *context) {
+  if (steps_on) {
+    switch(event) {
+      case HealthEventSignificantUpdate:
+        // Force daily average update
+        steps_avg_day = 0;
+        
+        // Recheck if metrics available and get steps if they are
+        if (steps_available()) {
+          get_steps();
+        } else {
+          // Otherwise reset everything else
+          steps_avg_now = 0;
+          steps_now = 0;
+        }
+        // Update steps progress display
+        layer_mark_dirty(steps_layer);
+        break;
+      case HealthEventMovementUpdate:
+        // Get step metrics and update progress display
+        get_steps();
+        layer_mark_dirty(steps_layer);
+        break;
+      case HealthEventSleepUpdate:
+        // Ignore sleep events
+        break;
+    }
+  }
+}
+
+// Turns on step count progress bar (and related events)
+static void enable_steps_display() {
+  if (!steps_on) {
+    // Check metrics are available
+    if (steps_available()) {
+      // Subscribe to updates
+      if (health_service_events_subscribe(steps_update, NULL)) {
+        // Get metrics and display progress bar
+        get_steps();
+        layer_mark_dirty(steps_layer);
+        layer_set_hidden(steps_layer, false);
+        steps_on = true;
+      }
+    }
+  }
+}
+
+// Turns off step count display (and related events)
+static void disable_steps_display() {
+  if (steps_on) {
+    health_service_events_unsubscribe();
+    layer_set_hidden(steps_layer, true);
+    steps_on = false;
+  }
+}
+#endif
+
 // Event fired when data received from Javascript
 static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tuple, const Tuple* old_tuple, void* context) {
   //APP_LOG(APP_LOG_LEVEL_DEBUG, "Message Key: %d", (int)key);
@@ -479,6 +622,13 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       if (s_savedata.show_week) text_layer_set_text(pm_layer, "");
       break;
     case SHOW_STEPS_KEY:
+      s_savedata.show_steps = (new_tuple->value->uint8 == 1);
+#if (defined(PBL_HEALTH) && defined(PBL_COLOR))
+      if (s_savedata.show_steps)
+        enable_steps_display();
+      else
+        disable_steps_display();
+#endif
       break;
     case LOC_CHANGED_KEY:
       if (!loading && (int)new_tuple->value->uint8 == 1) {
@@ -1025,10 +1175,20 @@ static void window_load(Window *window) {
   
   // Setup forecast layer (High/Low Temp, conditions, sunrise/sunset)
   forecast_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, 57, bounds.size.w, 64), GRect(0, 63, bounds.size.w, bounds.size.h-63)));
+
+  status_bg_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, -4, bounds.size.w, 17), GRect(0, -4, bounds.size.w, 17)));
+  text_layer_set_background_color(status_bg_layer, GColorWhite);
+  layer_add_child(forecast_layer, text_layer_get_layer(status_bg_layer));
+  
+#if (defined(PBL_HEALTH) && defined(PBL_COLOR))
+  steps_layer = layer_create(PBL_IF_RECT_ELSE(GRect(0, -4, bounds.size.w, 17), GRect(0, -4, bounds.size.w, 17)));
+  layer_add_child(forecast_layer, steps_layer);
+  layer_set_update_proc(steps_layer, draw_steps_progress);
+#endif
   
   forecast_day_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(0, -4, 64, 17), GRect(0, -4, (bounds.size.w/2)-20, 17)));
   text_layer_set_text_color(forecast_day_layer, GColorBlack);
-  text_layer_set_background_color(forecast_day_layer, GColorWhite);
+  text_layer_set_background_color(forecast_day_layer, GColorClear);
   text_layer_set_font(forecast_day_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD));
   text_layer_set_text_alignment(forecast_day_layer, GTextAlignmentLeft);
   text_layer_set_overflow_mode(forecast_day_layer, GTextOverflowModeFill);
@@ -1036,7 +1196,7 @@ static void window_load(Window *window) {
   
   status_layer = text_layer_create(PBL_IF_RECT_ELSE(GRect(60, -4, 84, 17), GRect((bounds.size.w/2)+20, -4, (bounds.size.w/2)-20, 17)));
   text_layer_set_text_color(status_layer, GColorBlack);
-  text_layer_set_background_color(status_layer, GColorWhite);
+  text_layer_set_background_color(status_layer, GColorClear);
   text_layer_set_font(status_layer, fonts_get_system_font(FONT_KEY_GOTHIC_14));
   text_layer_set_text_alignment(status_layer, GTextAlignmentRight);
   text_layer_set_overflow_mode(status_layer, GTextOverflowModeTrailingEllipsis);
@@ -1235,6 +1395,11 @@ static void window_unload(Window *window) {
   bitmap_layer_destroy(batt_layer);
   layer_destroy(current_layer);
   
+#if (defined(PBL_HEALTH) && defined(PBL_COLOR))
+  if (steps_on) health_service_events_unsubscribe();
+  layer_destroy(steps_layer);
+#endif
+  
   text_layer_destroy(forecast_day_layer);
   text_layer_destroy(status_layer);
   text_layer_destroy(high_label_layer);
@@ -1244,6 +1409,7 @@ static void window_unload(Window *window) {
   text_layer_destroy(condition_layer);
   bitmap_layer_destroy(icon_layer);
   bitmap_layer_destroy(sun_layer);
+  text_layer_destroy(status_bg_layer);
   layer_destroy(forecast_layer);
   
   layer_destroy(cal_layer);
