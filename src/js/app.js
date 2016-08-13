@@ -309,15 +309,26 @@ function t24HTo12(hours) {
     return hours;
 }
 
-// Converts 24 hour start and end times to a range in 12 hour text format
+function pad24Hour(hours) {
+  if (hours.toString().length < 2)
+    return '0' + hours;
+  else
+    return hours;
+}
+
+// Converts 24 hour start and end times to a range in 12 or 24 hour text format based on the watch 12/24hour setting
 function timeRange2Text(startHour, endHour) {
-  if (startHour < 12 && endHour < 12) {
-    return startHour + '-' + endHour + 'am';
-  } else if (startHour >= 12 && endHour >= 12) {
-    return t24HTo12(startHour) + '-' + t24HTo12(endHour) + 'pm';
+  if (time24hr) {
+    return pad24Hour(startHour) + '-' + pad24Hour(endHour) + 'h';
   } else {
-    return (startHour < 12 ? startHour + 'am' : t24HTo12(startHour) + 'pm') + '-' + 
-      (endHour < 12 ? endHour + 'am' : t24HTo12(endHour) + 'pm');
+    if (startHour < 12 && endHour < 12) {
+      return startHour + '-' + endHour + 'am';
+    } else if (startHour >= 12 && endHour >= 12) {
+      return t24HTo12(startHour) + '-' + t24HTo12(endHour) + 'pm';
+    } else {
+      return (startHour < 12 ? startHour + 'am' : t24HTo12(startHour) + 'pm') + '-' + 
+        (endHour < 12 ? endHour + 'am' : t24HTo12(endHour) + 'pm');
+    }
   }
 }
 

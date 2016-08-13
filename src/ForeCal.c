@@ -381,7 +381,10 @@ static void draw_steps_progress(struct Layer *layer, GContext *ctx) {
     GRect icon_frame = layer_get_frame(bitmap_layer_get_layer(icon_layer));
 #endif
     if (steps_now != 0) {
-      graphics_context_set_fill_color(ctx, (s_savedata.daymode ? GColorBlueMoon : GColorVividCerulean));
+      if (steps_now >= steps_avg_now)
+        graphics_context_set_fill_color(ctx, (s_savedata.daymode ? GColorIslamicGreen : GColorGreen));
+      else
+        graphics_context_set_fill_color(ctx, (s_savedata.daymode ? GColorBlueMoon : GColorVividCerulean));
 #ifdef PBL_ROUND
       int steps_pos = ((bounds.size.w - icon_frame.size.w) * steps_now) / steps_avg_day;
       if (steps_pos > icon_frame.origin.x) steps_pos += icon_frame.size.w;
@@ -1246,7 +1249,9 @@ static void window_load(Window *window) {
   text_layer_set_overflow_mode(sun_rise_set_layer, GTextOverflowModeFill);
   layer_add_child(forecast_layer, text_layer_get_layer(sun_rise_set_layer));
   
-  icon_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(66, 16, 32, 32), GRect((bounds.size.w-32)/2, 0, 32, 32)));
+  icon_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(66, 16, 32, 32), GRect((bounds.size.w-34)/2, 0, 34, 32)));
+  bitmap_layer_set_alignment(icon_layer, GAlignCenter);
+  bitmap_layer_set_background_color(icon_layer, GColorBlack);
   layer_add_child(forecast_layer, bitmap_layer_get_layer(icon_layer));
   
   sun_layer = bitmap_layer_create(PBL_IF_RECT_ELSE(GRect(115, 17, 20, 14), GRect(50, 92, 20, 14)));
