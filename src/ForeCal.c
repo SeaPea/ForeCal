@@ -409,13 +409,15 @@ static void draw_steps_progress(struct Layer *layer, GContext *ctx) {
 
 // Get all the steps metrics and store in static variables
 static void get_steps() {
-  time_t day_start = time_start_of_today();
-  time_t day_end = day_start + SECONDS_PER_DAY - 1;
-  time_t now = time(NULL);
+  const HealthMetric metric = HealthMetricStepCount;
+  const HealthServiceTimeScope scope = HealthServiceTimeScopeWeekly;
+  const time_t day_start = time_start_of_today();
+  const time_t day_end = day_start + SECONDS_PER_DAY;
+  const time_t now = time(NULL);
   
   // If the daily average has not been fetched or is being refreshed, get it
   if (steps_avg_day == 0)
-    steps_avg_day = health_service_sum_averaged(HealthMetricStepCount, day_start, day_end, HealthServiceTimeScopeDailyWeekdayOrWeekend);
+    steps_avg_day = health_service_sum_averaged(metric, day_start, day_end, scope);
   
   if (steps_avg_day == 0) {
     // If the daily average still isn't available, do not show any other metrics
@@ -423,28 +425,30 @@ static void get_steps() {
     steps_now = 0;
   } else {
     // Get the daily average up to now and the total steps for today
-    steps_avg_now = health_service_sum_averaged(HealthMetricStepCount, day_start, now, HealthServiceTimeScopeDailyWeekdayOrWeekend);
-    steps_now = health_service_sum(HealthMetricStepCount, day_start, now);
+    steps_avg_now = health_service_sum_averaged(metric, day_start, now, scope);
+    steps_now = health_service_sum(metric, day_start, now);
   }
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Get Steps - Daily Avg: %d, Avg to Now: %d, Today's Steps: %d", (int)steps_avg_day, (int)steps_avg_now, (int)steps_now);
 }
 
 // Check if all steps metrics are available
 static bool steps_available() {
-  time_t day_start = time_start_of_today();
-  time_t day_end = day_start + SECONDS_PER_DAY - 1;
-  time_t now = time(NULL);
+  const HealthMetric metric = HealthMetricStepCount;
+  const HealthServiceTimeScope scope = HealthServiceTimeScopeWeekly;
+  const time_t day_start = time_start_of_today();
+  const time_t day_end = day_start + SECONDS_PER_DAY;
+  const time_t now = time(NULL);
   
   // Check if steps so far today are available
-  if (!(health_service_metric_accessible(HealthMetricStepCount, day_start, now) & HealthServiceAccessibilityMaskAvailable))
+  if (!(health_service_metric_accessible(metric, day_start, now) & HealthServiceAccessibilityMaskAvailable))
     return false;
   
   // Check if daily average for today is available
-  if (!(health_service_metric_averaged_accessible(HealthMetricStepCount, day_start, day_end, HealthServiceTimeScopeDailyWeekdayOrWeekend) & HealthServiceAccessibilityMaskAvailable))
+  if (!(health_service_metric_averaged_accessible(metric, day_start, day_end, scope) & HealthServiceAccessibilityMaskAvailable))
     return false;
   
   // Check if daily average up to now is available
-  if (!(health_service_metric_averaged_accessible(HealthMetricStepCount, day_start, now, HealthServiceTimeScopeDailyWeekdayOrWeekend) & HealthServiceAccessibilityMaskAvailable))
+  if (!(health_service_metric_averaged_accessible(metric, day_start, now, scope) & HealthServiceAccessibilityMaskAvailable))
     return false;
   
   // If we get here, all metrics are available
