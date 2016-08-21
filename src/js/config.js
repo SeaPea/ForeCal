@@ -1,6 +1,6 @@
 // Clay Configuration definition
 
-var APP_VER = "v3.5";
+var APP_VER = "v3.6";
 module.exports = [
   {
     "type": "section",
@@ -120,8 +120,6 @@ module.exports = [
         "label": "Show tomorrow's forecast after",
         "attributes": {
           "type": "time",
-          "min": "13:00",
-          "max": "00:00",
           "required": "required"
         }
       },
