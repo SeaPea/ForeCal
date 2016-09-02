@@ -1,6 +1,6 @@
 // Clay Configuration definition
 
-var APP_VER = "v3.6";
+var APP_VER = "v4.0";
 module.exports = [
   {
     "type": "section",
@@ -112,6 +112,22 @@ module.exports = [
           "placeholder": "eg: New York, NY",
           "limit": 100,
         }
+      },
+      {
+        "type": "radiogroup",
+        "appKey": "WeatherProvider",
+        "label": "Weather Provider",
+        "defaultValue": "0",
+        "options": [
+          {
+            "label": "YAHOO!",
+            "value": "0"
+          },
+          {
+            "label": "OpenWeatherMap.org",
+            "value": "1"
+          }
+        ]
       },
       {
         "type": "input",

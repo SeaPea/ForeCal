@@ -479,8 +479,8 @@ static void steps_update(HealthEventType event, void *context) {
         get_steps();
         layer_mark_dirty(steps_layer);
         break;
-      case HealthEventSleepUpdate:
-        // Ignore sleep events
+      default:
+        // Ignore everything else
         break;
     }
   }
