@@ -260,11 +260,6 @@ module.exports = [
   },
   
   {
-    "type": "text",
-    "defaultValue": "Weather data provided by OpenWeatherMap.org"
-  },
-  
-  {
     "type": "submit",
     "defaultValue": "Save"
   },

@@ -1,6 +1,7 @@
 var DEBUG = false;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
+// (This is a free tier key so it doesn't allow for many requests)
 // APPLY FOR YOUR OWN KEY at OpenWeatherMap.org
 var OWM_API_KEY = "106caae1620867404688360dcbd4bb3e";
 
@@ -384,13 +385,14 @@ function unixUTC2Local(unixTime) {
 }
 
 // Converts a time string (e.g. "7:31 am") to a Javascript date in local time with today's date
-function timeStrToDate(timeStr) {
+function timeStrToDate(timeAsStr) {
   var d = new Date();
-  if (timeStr) {
-    var parts = timeStr.match(/(\d{1,2}):(\d{1,2})\s*([ap])/i);
+  if (timeAsStr) {
+    var parts = timeAsStr.match(/(\d{1,2}):(\d{1,2})\s*([ap])/i);
     if (parts) {
-      d.setHours(parseInt(parts[0]) + (parts[2].toLowerCase() == 'p' ? 12 : 0));
-      d.setMinutes(parseInt(parts[1]));
+      d.setHours(parseInt(parts[1]) + (parts[3].toLowerCase() == 'p' ? 12 : 0));
+      d.setMinutes(parseInt(parts[2]));
+      d.setSeconds(0);
       return d;
     } else
       return NaN;
@@ -704,7 +706,7 @@ function fetchYWeather(loc) {
         localStorage.setItem('lastForecastUpdate', curr_time.toISOString());
         
         today = { high: d[0].item.forecast.high, low: d[0].item.forecast.low, code: codeFromYiD(d[0].item.forecast.code), condition: d[0].item.forecast.text };
-        tomorrow = { high: d[0].item.forecast.high, low: d[0].item.forecast.low, code: codeFromYiD(d[0].item.forecast.code), condition: d[0].item.forecast.text };
+        tomorrow = { high: d[1].item.forecast.high, low: d[1].item.forecast.low, code: codeFromYiD(d[1].item.forecast.code), condition: d[1].item.forecast.text };
         
         lastUpdate = new Date(curr_time);
         localStorage.setItem('lastUpdate', curr_time.toISOString());
