@@ -190,7 +190,7 @@ static void handle_status_timer(void *data) {
 #ifdef DEBUG
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Status timer event fired");
 #endif
-  if (s_savedata.status != NULL && strlen(s_savedata.status) > 0)
+  if (status_timer != NULL && s_savedata.status != NULL && strlen(s_savedata.status) > 0)
     text_layer_set_text(status_layer, s_savedata.status);
   else {
 #ifdef DEBUG
@@ -203,6 +203,11 @@ static void handle_status_timer(void *data) {
 
 // App message communication error
 static void sync_error_callback(DictionaryResult dict_error, AppMessageResult app_message_error, void *context) {
+  if (status_timer != NULL) {
+    app_timer_cancel(status_timer);
+    status_timer = NULL;
+  }
+  
   APP_LOG(APP_LOG_LEVEL_ERROR, "App Message Sync Error: %d", app_message_error);
   last_error = true;
   bool retry = false;
