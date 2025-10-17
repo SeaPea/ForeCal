@@ -126,12 +126,15 @@ module.exports = [
           {
             "label": "OpenWeatherMap.org",
             "value": "1"
-          },
-          {
-            "label": "Weather.gov (NWS)",
-            "value": "2"
           }
         ]
+      },
+      {
+        "type": "toggle",
+        "appKey": "PreferNWS",
+        "label": "Prefer NWS (weather.gov) for USA locations",
+        "description": "When enabled, will attempt to use NWS first. Automatically falls back to the selected provider above if the location is outside USA coverage.",
+        "defaultValue": false
       },
       {
         "type": "input",

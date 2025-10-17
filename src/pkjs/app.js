@@ -1,4 +1,4 @@
-const DEBUG = true;
+const DEBUG = false;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
 // (This is a free tier key so it doesn't allow for many requests)
@@ -10,14 +10,15 @@ var clayConfig = require('./config');
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 
 var daymode = 0;
-var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
+var locationOptions = { "timeout": 15000, "maximumAge": 60000 };
 var lastStationId = null;
 var time24hr = true;
 var lastUpdate = null;
 var lastForecastUpdate = null;
 var lastUnits = 'metric';
+var geocodeCache = {}; // Cache for geocoded locations
 
-var config = { 
+var config = {
   ColorScheme: 'Auto',
   ShowBT: 1,
   BTVibes: 1,
@@ -54,9 +55,9 @@ function log_message(msg, extra) {
 }
 
 function loadSettings() {
-  
+
   if (DEBUG) console.log('Loading settings...');
-  
+
   if (localStorage.getItem('config')) {
     try {
       config = JSON.parse(localStorage.getItem('config'));
@@ -74,7 +75,7 @@ function loadSettings() {
       }
     } catch(ex) {}
   }
-  
+
   if (localStorage.getItem('time24hr') !== null)
     time24hr = (localStorage.getItem('time24hr') == 'true');
   if (localStorage.getItem('lastStationId'))
@@ -85,15 +86,24 @@ function loadSettings() {
     lastForecastUpdate = new Date(localStorage.getItem('lastForecastUpdate'));
   if (localStorage.getItem('lastUnits'))
     lastUnits = localStorage.getItem('lastUnits');
+
+  // Load geocode cache
+  if (localStorage.getItem('geocodeCache')) {
+    try {
+      geocodeCache = JSON.parse(localStorage.getItem('geocodeCache'));
+    } catch(ex) {
+      geocodeCache = {};
+    }
+  }
 }
 
 function saveSettings() {
-  
+
   if (DEBUG) console.log('Saving settings');
-  
+
   var refreshW = false;
   var saved = null;
-  
+
   // Correct data types passed back from Clay config
   config.FirstDay = parseInt(config.FirstDay);
   config.CalOffset = parseInt(config.CalOffset);
@@ -105,21 +115,21 @@ function saveSettings() {
   config.QTEndHour = parseInt(config.QTEnd.split(":")[0]);
   config.QTEndMin = parseInt(config.QTEnd.split(":")[1]);
   config.WeatherProvider = parseInt(config.WeatherProvider);
-  
+
   // Get previously saved config for comparison
   try {
     if (localStorage.getItem('config')) saved = JSON.parse(localStorage.getItem('config'));
   } catch(ex) {}
   localStorage.setItem('config', JSON.stringify(config));
-  
+
   localStorage.setItem('time24Hr', time24hr);
-  
+
   if (config.ColorScheme == 'WhiteOnBlack') {
     daymode = 0;
   } else if (config.ColorScheme == 'BlackOnWhite') {
     daymode = 1;
   }
-  
+
   // Check for changes that should force a weather refresh
   if (saved) {
     if (DEBUG) {
@@ -148,7 +158,7 @@ function saveSettings() {
   } else {
     refreshW = true;
   }
-  
+
   if (refreshW) {
     if (DEBUG) console.log('Refreshing weather after changing settings');
     localStorage.removeItem("lastStationId");
@@ -157,6 +167,14 @@ function saveSettings() {
     localStorage.removeItem("lastForecastUpdate");
     localStorage.removeItem("forecastToday");
     localStorage.removeItem("forecastTomorrow");
+
+    // Clear geocode cache if location changed
+    if (saved && saved.WeatherLoc !== config.WeatherLoc) {
+      if (DEBUG) console.log('Location changed, clearing geocode cache');
+      geocodeCache = {};
+      localStorage.removeItem("geocodeCache");
+    }
+
     lastStationId = null;
     lastUpdate = null;
     lastForecastUpdate = null;
@@ -179,7 +197,7 @@ function saveSettings() {
       console.log('Quite Time BT Vibes: ' + config.QTVibes);
       console.log('Quiet Time Fetch Weather: ' + config.QTFetch);
     }
-    
+
     // Send only misc settings to the Pebble if no weather refresh needed
     Pebble.sendAppMessage({
       "first_day":config.FirstDay,
@@ -204,7 +222,7 @@ function saveSettings() {
       "weather_fetched":0
     });
   }
-    
+
 }
 
 // Convert/Reduce OpenWeatherMap weather codes to our weather codes for icons and gives an 'exterme' priority
@@ -232,17 +250,17 @@ function codeFromOWMId(weatherId) {
     case 956: //strong breeze
     case 957: //high wind, near gale
       return 6; //Windy
-    case 701: //mist 
-    case 711: //smoke 
-    case 721: //haze 
+    case 701: //mist
+    case 711: //smoke
+    case 721: //haze
     case 731: //sand, dust whirls
-    case 741: //fog 
-    case 751: //sand 
+    case 741: //fog
+    case 751: //sand
     case 761: //dust
     case 762: //volcanic ash
       return 7; //Low Visibility
     case 300: //light intensity drizzle
-    case 301: //drizzle 
+    case 301: //drizzle
     case 302: //heavy intensity drizzle
     case 310: //light intensity drizzle rain
     case 311: //drizzle rain
@@ -549,10 +567,10 @@ function timeStrToDate(timeAsStr) {
 // Gets a time string from a JS date object
 function timeStr(time) {
   if (time24hr) {
-    return time.getHours() + ':' + 
+    return time.getHours() + ':' +
       (time.getMinutes() < 10 ? '0' : '') + time.getMinutes();
   } else {
-    return (((time.getHours() + 11) % 12) + 1) + ':' + 
+    return (((time.getHours() + 11) % 12) + 1) + ':' +
       (time.getMinutes() < 10 ? '0' : '') + time.getMinutes() +
       (time.getHours() >= 12 ? 'PM' : 'AM');
   }
@@ -582,7 +600,7 @@ function timeRange2Text(startHour, endHour) {
     } else if (startHour >= 12 && endHour >= 12) {
       return t24HTo12(startHour) + '-' + t24HTo12(endHour) + 'pm';
     } else {
-      return (startHour < 12 ? startHour + 'am' : t24HTo12(startHour) + 'pm') + '-' + 
+      return (startHour < 12 ? startHour + 'am' : t24HTo12(startHour) + 'pm') + '-' +
         (endHour < 12 ? endHour + 'am' : t24HTo12(endHour) + 'pm');
     }
   }
@@ -593,10 +611,10 @@ function timeRange2Text(startHour, endHour) {
 function conditionTimes2Text(times) {
   var text = '';
   var ranges = [];
-  
+
   // Start with 1st 3 hour time range
   if (times.length >= 1) ranges = [{startHour: times[0], endHour: (times[0]+3)%24}];
-  
+
   // Consolidate sequential time ranges
   for (var i = 1; i < times.length; i++) {
     if (ranges[ranges.length-1].endHour == times[i])
@@ -606,13 +624,13 @@ function conditionTimes2Text(times) {
       // Add new range for disjointed time range
       ranges.push({startHour: times[i], endHour: (times[i]+3)%24});
   }
-  
+
   // Convert time ranges to text
   for (var j = 0; j < ranges.length; j++) {
     if (text) text += ',';
     text += timeRange2Text(ranges[j].startHour, ranges[j].endHour);
   }
-  
+
   return (text ? ' ' + text : '');
 }
 
@@ -625,7 +643,7 @@ function formatTempK(kelvin) {
     else if (lastUnits == 'imperial')
       return Math.round(kelvin < 150 ? kelvin : (((kelvin * 9) / 5) - 459.67)) + '\u00B0' + 'F';
     else
-      return 'N/A'; 
+      return 'N/A';
   } catch(ex) {
     console.error('formatTempK(' + kelvin + ') Error: ' + ex);
     return 'ERR';
@@ -641,7 +659,7 @@ function formatTempF(f) {
       else if (lastUnits == 'imperial')
         return f + '\u00B0' + 'F';
       else
-        return 'N/A'; 
+        return 'N/A';
     } else
       return "";
   } catch (ex) {
@@ -685,12 +703,18 @@ function locationSuccess(pos) {
   var coordinates = pos.coords;
   log_message("GPS location: " + coordinates.latitude + ", " + coordinates.longitude);
 
-  if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
-    fetchOWMWeather("lat=" + coordinates.latitude + "&lon=" + coordinates.longitude);
-  } else if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 2) {
-    fetchNWSWeather(coordinates.latitude, coordinates.longitude);
+  if (config.PreferNWS) {
+    log_message('NWS preference enabled - attempting NWS with GPS coordinates');
+    // Try NWS first, with fallback to selected provider on error
+    fetchNWSWeatherWithFallback(coordinates.latitude, coordinates.longitude);
   } else {
-    fetchYWeather("(" + coordinates.latitude + "," + coordinates.longitude + ")");
+    // Use selected provider normally
+    log_message('Using selected weather provider (NWS preference disabled)');
+    if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
+      fetchOWMWeather("lat=" + coordinates.latitude + "&lon=" + coordinates.longitude);
+    } else {
+      fetchYWeather("(" + coordinates.latitude + "," + coordinates.longitude + ")");
+    }
   }
 }
 
@@ -702,46 +726,192 @@ function locationError(err) {
   });
 }
 
+
+// Fetch NWS weather with automatic fallback to selected provider if NWS fails
+function fetchNWSWeatherWithFallback(lat, lon) {
+  log_message('Attempting NWS weather fetch with fallback capability');
+
+  // First, try to get the grid point information from NWS
+  var reqPoints = new XMLHttpRequest();
+  var pointsUrl = 'https://api.weather.gov/points/' + lat.toFixed(4) + ',' + lon.toFixed(4);
+
+  reqPoints.open('GET', pointsUrl, true);
+  reqPoints.setRequestHeader('User-Agent', 'PebbleForeCal/1.0');
+
+  reqPoints.onload = function() {
+    if (reqPoints.readyState === 4) {
+      if (reqPoints.status === 200) {
+        // NWS is available for this location - proceed with full NWS fetch
+        log_message('NWS points endpoint successful - location is within NWS coverage');
+        fetchNWSWeather(lat, lon);
+      } else {
+        // NWS not available (likely outside USA coverage) - fall back to selected provider
+        log_message('NWS points endpoint failed (status: ' + reqPoints.status + ') - falling back to selected provider');
+        fallbackToSelectedProvider(lat, lon);
+      }
+    }
+  };
+
+  reqPoints.onerror = function() {
+    // Network error or NWS unavailable - fall back to selected provider
+    log_message('NWS points endpoint network error - falling back to selected provider');
+    fallbackToSelectedProvider(lat, lon);
+  };
+
+  reqPoints.send(null);
+}
+
+// Helper function to fall back to the selected weather provider
+function fallbackToSelectedProvider(lat, lon) {
+  log_message('Falling back to selected provider with coordinates: ' + lat + ', ' + lon);
+
+  if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
+    log_message('Using OpenWeatherMap as fallback');
+    fetchOWMWeather("lat=" + lat + "&lon=" + lon);
+  } else {
+    log_message('Using Yahoo as fallback');
+    fetchYWeather("(" + lat + "," + lon + ")");
+  }
+}
+
+// Geocode a location string to lat/lon using OpenStreetMap Nominatim
+// Success callback receives: (lat, lon, country_code)
+function geocodeLocation(location, successCallback, errorCallback) {
+  log_message('Geocoding location: ' + location);
+
+  // Check cache first
+  if (geocodeCache[location]) {
+    log_message('Using cached geocode result for: ' + location);
+    successCallback(geocodeCache[location].lat, geocodeCache[location].lon, geocodeCache[location].country_code);
+    return;
+  }
+
+  var url = 'https://nominatim.openstreetmap.org/search?q=' +
+            encodeURIComponent(location) +
+            '&format=json&limit=1&addressdetails=1';
+
+  var req = new XMLHttpRequest();
+
+  req.open('GET', url, true);
+  req.setRequestHeader('User-Agent', 'PebbleForeCal/1.0');
+
+  req.onload = function() {
+    if (req.readyState === 4) {
+      if (req.status === 200) {
+        try {
+          var response = JSON.parse(req.responseText);
+
+          if (response && response.length > 0) {
+            var lat = parseFloat(response[0].lat);
+            var lon = parseFloat(response[0].lon);
+            var country_code = '';
+
+            // Extract country code from address details
+            if (response[0].address && response[0].address.country_code) {
+              country_code = response[0].address.country_code.toLowerCase();
+            }
+
+            log_message('Geocoded "' + location + '" to: ' + lat + ', ' + lon + ' (country: ' + country_code + ')');
+
+            // Cache the result with country code
+            geocodeCache[location] = { lat: lat, lon: lon, country_code: country_code };
+            localStorage.setItem('geocodeCache', JSON.stringify(geocodeCache));
+
+            successCallback(lat, lon, country_code);
+          } else {
+            log_message('No geocoding results found for: ' + location);
+            errorCallback('Location not found');
+          }
+        } catch(e) {
+          log_message('Error parsing geocode response: ' + e.message);
+          errorCallback('Geocoding error');
+        }
+      } else {
+        log_message('Geocoding request failed with status: ' + req.status);
+        errorCallback('Geocoding service error');
+      }
+    }
+  };
+
+  req.onerror = function() {
+    log_message('Geocoding request error');
+    errorCallback('Network error');
+  };
+
+  req.send(null);
+}
+
+
 function refreshWeather() {
 
   if (config.WeatherLoc) {
-    if (DEBUG) console.log('Fetching weather using fixed location: ' + config.WeatherLoc);
-    if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
-      fetchOWMWeather("q=" + encodeURIComponent(config.WeatherLoc));
-    } else if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 2) {
-      // For NWS, we need to geocode the location first
-      // For now, just show an error - user should use GPS for NWS
-      Pebble.sendAppMessage({
-        "city":"NWS: Use GPS",
-        "weather_fetched":0
-      });
+    // Manual location entry
+    log_message('Fetching weather using fixed location: ' + config.WeatherLoc);
+
+    // Check if NWS preference is enabled
+    if (config.PreferNWS) {
+      log_message('NWS preference enabled - geocoding location to check country');
+
+      // Geocode the location to get coordinates and country code
+      geocodeLocation(
+        config.WeatherLoc,
+        function(lat, lon, country_code) {
+          // Success - check if location is in USA
+          if (country_code === 'us') {
+            log_message('Location is in USA - using NWS');
+            fetchNWSWeather(lat, lon);
+          } else {
+            log_message('Location is outside USA (country: ' + country_code + ') - falling back to selected provider');
+            // Fall back to selected provider using geocoded coordinates
+            if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
+              fetchOWMWeather("lat=" + lat + "&lon=" + lon);
+            } else {
+              fetchYWeather("(" + lat + "," + lon + ")");
+            }
+          }
+        },
+        function(error) {
+          // Geocoding failed - show error message
+          log_message('Geocoding failed: ' + error);
+          Pebble.sendAppMessage({
+            "city":"Geocode Error",
+            "weather_fetched":0
+          });
+        }
+      );
     } else {
-      fetchYWeather(encodeURIComponent(config.WeatherLoc));
+      // NWS preference disabled - use selected provider normally
+      log_message('Using selected weather provider (NWS preference disabled)');
+      if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
+        fetchOWMWeather("q=" + encodeURIComponent(config.WeatherLoc));
+      } else {
+        fetchYWeather(encodeURIComponent(config.WeatherLoc));
+      }
     }
   } else {
-    // Trigger weather refresh by fetching location
-    if (DEBUG) console.log('Getting GPS location for weather');
+    // GPS location
+    log_message('Getting GPS location for weather');
     navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
   }
 
 }
 
 function fetchYWeather(loc) {
-  
+
   if (DEBUG) console.log("### FETCHING YAHOO WEATHER ###");
   if (DEBUG) console.log('Using query string: ' + loc);
-  
+
   var curr_time = new Date();
-  
+
   var country, region, city, status, units;
   var curr_temp, sunrise, sunset;
   var forecast_day, forecast_date;
   var auto_daymode, windspeed;
   var today, tomorrow, forecast;
   var stationId, locChanged;
-  
-  if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour || 
-                                    (curr_time.getHours() == config.ForecastHour && 
+
+  if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour ||
+                                    (curr_time.getHours() == config.ForecastHour &&
                                      curr_time.getMinutes() >= config.ForecastMin))) {
     // Between set time and Midnight, show tomorrow's forecast
     forecast_day = 'Tomorrow';
@@ -758,16 +928,16 @@ function fetchYWeather(loc) {
     else
       forecast = JSON.parse(localStorage.getItem('forecastToday'));
   }
-  
+
   var reqWeather = new XMLHttpRequest();
-  
+
   reqWeather.onload = function(e) {
     if (reqWeather.readyState == 4) {
       if (reqWeather.status == 200) {
         // Successfully retrieved weather data
-        
-        var d, d2; 
-        
+
+        var d, d2;
+
         try {
           // Parse weather data JSON
           d2 = JSON.parse(reqWeather.responseText);
@@ -777,7 +947,7 @@ function fetchYWeather(loc) {
             "weather_fetched":0});
           return;
         }
-        
+
         // Validate data
         if (d2.error && d.error.description) {
           console.warn("Yahoo Weather Error: " + d.error.description);
@@ -796,15 +966,15 @@ function fetchYWeather(loc) {
             "weather_fetched":0});
           return;
         }
-        
+
         d = d2.query.results.channel;
-        
+
         country = d[0].location.country;
         region = d[0].location.region;
         city = d[0].location.city;
-        
+
         if (!config.TempUnit || config.TempUnit === '' || config.TempUnit === 'Auto') {
-          // Determine temperature and wind-speed units from country code 
+          // Determine temperature and wind-speed units from country code
           // (US gets F and mph, everyone else gets C and m/s)
           if (country == 'United States')
             units = 'imperial';
@@ -816,22 +986,22 @@ function fetchYWeather(loc) {
           else
             units = 'metric';
         }
-        
+
         lastUnits = units;
         localStorage.setItem('lastUnits', lastUnits);
-        
+
         stationId = region + city;
         locChanged = (stationId == lastStationId ? 0 : 1);
         lastStationId = stationId;
         localStorage.setItem("lastStationId", stationId);
         localStorage.setItem("lastCity", city);
-        
+
         // Get current condtion
         curr_temp = d[0].item.condition.temp;
         windspeed = d[0].wind.speed;
-        
+
         daymode = 0;
-        
+
         if (!config.ColorScheme || config.ColorScheme === '' || config.ColorScheme == 'Auto') {
           auto_daymode = 1;
         }
@@ -839,11 +1009,11 @@ function fetchYWeather(loc) {
           auto_daymode = 0;
           daymode = (config.ColorScheme == 'WhiteOnBlack') ? 0 : 1;
         }
-        
+
         if (d[0].astronomy) {
           sunrise = timeStrToDate(d[0].astronomy.sunrise);
           sunset = timeStrToDate(d[0].astronomy.sunset);
-          
+
           if (auto_daymode == 1) {
             if (!isNaN(sunrise) && !isNaN(sunset)) {
               // Calculate if the current time is between the sunrise and sunset
@@ -857,25 +1027,25 @@ function fetchYWeather(loc) {
             }
           }
         }
-        
+
         // Set the status display on the Pebble to the time of the weather update
         status = 'Upd: ' + timeStr(curr_time);
-        
+
         localStorage.setItem('lastForecastUpdate', curr_time.toISOString());
-        
+
         today = { high: d[0].item.forecast.high, low: d[0].item.forecast.low, code: codeFromYiD(d[0].item.forecast.code), condition: d[0].item.forecast.text };
         tomorrow = { high: d[1].item.forecast.high, low: d[1].item.forecast.low, code: codeFromYiD(d[1].item.forecast.code), condition: d[1].item.forecast.text };
-        
+
         lastUpdate = new Date(curr_time);
         localStorage.setItem('lastUpdate', curr_time.toISOString());
         localStorage.setItem("forecastToday", JSON.stringify(today));
         localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
-        
+
         if (forecast_date.getDate() == curr_time.getDate())
           forecast = today;
         else
           forecast = tomorrow;
-                
+
         if (DEBUG) {
           console.log('Current Temp: ' + formatTempF(curr_temp));
           console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
@@ -903,7 +1073,7 @@ function fetchYWeather(loc) {
           console.log('Quite Time BT Vibes: ' + config.QTVibes);
           console.log('Quiet Time Fetch Weather: ' + config.QTFetch);
         }
-        
+
         // Send the data to the Pebble
         Pebble.sendAppMessage({
             "status":status,
@@ -940,32 +1110,32 @@ function fetchYWeather(loc) {
             "qt_bt_vibes":config.QTVibes,
             "qt_fetch_weather":config.QTFetch,
             "weather_fetched":1});
-        
+
       } else {
         console.warn("Yahoo HTTP Error: " + reqWeather.status);
-        
+
         Pebble.sendAppMessage({
           "city":"HTTP Err: " + reqWeather.status, // Show error briefly
           "weather_fetched":0});
       }
     }
   };
-  
+
   if (DEBUG) {
     console.log('Last update: ' + lastUpdate);
     console.log('Forecast data: ' + JSON.stringify(forecast));
     console.log('Mins since last update: ' + ((curr_time - lastUpdate) / 60000));
   }
-  
+
   if (lastUpdate && forecast && ((curr_time - lastUpdate) / 60000) <= 59) {
     // If less than 1 hour (use 59 minutes to account for any timestamp differences) and we have forecast data saved
     // then return the forecast data so the correct day forecast is shown at midnight and the forecast hour
-    
-    if (localStorage.getItem('lastCity')) 
+
+    if (localStorage.getItem('lastCity'))
       city = localStorage.getItem('lastCity');
     else
       city = "";
-    
+
     Pebble.sendAppMessage({
       "status":"Upd: " + timeStr(lastUpdate),
       "city":city,
@@ -974,7 +1144,7 @@ function fetchYWeather(loc) {
       "low_temp":formatTempF(forecast.low),
       "icon":forecast.code,
       "condition":forecast.condition});
-    
+
   } else {
     // Initiate HTTP request for curent weather data from YAHOO!
     reqWeather.open('GET', "https://query.yahooapis.com/v1/public/yql?q=select%20location,%20wind,%20astronomy,%20item.condition,item.forecast%20from%20weather.forecast%20where%20woeid%20IN%20(select%20locality1.woeid%20from%20geo.places(0,1)%20where%20text%3D%27" + loc.replace("'", "%27%27") + "%27)%20and%20u%3D%27f%27%20%7C%20truncate(count%3D2)&format=json", true);
@@ -984,20 +1154,20 @@ function fetchYWeather(loc) {
 
 // Fetch the weather data from the OpenWeatherMap web service and transmit to Pebble
 function fetchOWMWeather(loc) {
-  
+
   if (DEBUG) console.log("### FETCHING OWM WEATHER ###");
   if (DEBUG) console.log('Using query string: ' + loc);
-  
+
   var curr_time = new Date();
-  
+
   var country, city, status, units;
   var curr_temp, sunrise, sunset, locChanged = 0, stationId = 0;
   var forecast_day, forecast_date, high, low, icon, condition;
   var auto_daymode, windspeed, weather_time;
   var today, tomorrow, forecast;
-  
-  if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour || 
-                                    (curr_time.getHours() == config.ForecastHour && 
+
+  if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour ||
+                                    (curr_time.getHours() == config.ForecastHour &&
                                      curr_time.getMinutes() >= config.ForecastMin))) {
     // Between set time and Midnight, show tomorrow's forecast
     forecast_day = 'Tomorrow';
@@ -1014,20 +1184,20 @@ function fetchOWMWeather(loc) {
     else
       forecast = JSON.parse(localStorage.getItem('forecastToday'));
   }
-  
+
   // Setup HTTP requests for current weather data and forecast data
   var reqCurrent = new XMLHttpRequest();
   var reqForecast = new XMLHttpRequest();
-  
+
   // First HTTP is triggered at the end of this function...
-  
+
   reqCurrent.onload = function(e) {
     if (reqCurrent.readyState == 4) {
       if (reqCurrent.status == 200) {
         // Successfully retrieved current weather data
-        
-        var d; 
-        
+
+        var d;
+
         try {
           // Parse weather data JSON
           d = JSON.parse(reqCurrent.responseText);
@@ -1037,7 +1207,7 @@ function fetchOWMWeather(loc) {
             "weather_fetched":0});
           return;
         }
-        
+
         // Validate data
         if (!d.cod) {
           Pebble.sendAppMessage({
@@ -1055,10 +1225,10 @@ function fetchOWMWeather(loc) {
             "weather_fetched":0});
           return;
         }
-        
+
         // Get weather data date
         weather_time = unixUTC2Local(d.dt);
-        
+
         if ((Math.abs(curr_time - weather_time) / 3600000) > 3) {
           if (DEBUG) console.log('Stale weather data: ' + weather_time);
           Pebble.sendAppMessage({
@@ -1066,12 +1236,12 @@ function fetchOWMWeather(loc) {
             "weather_fetched":0});
           return;
         }
-        
+
         country = d.sys.country;
         city = d.name;
-        
+
         if (!config.TempUnit || config.TempUnit === '' || config.TempUnit === 'Auto') {
-          // Determine temperature and wind-speed units from country code 
+          // Determine temperature and wind-speed units from country code
           // (US gets F and mph, everyone else gets C and m/s)
           if (country == 'US')
             units = 'imperial';
@@ -1083,22 +1253,22 @@ function fetchOWMWeather(loc) {
           else
             units = 'metric';
         }
-        
+
         lastUnits = units;
         localStorage.setItem('lastUnits', lastUnits);
-        
+
         stationId = d.id;
         locChanged = (stationId == lastStationId ? 0 : 1);
         lastStationId = stationId;
         localStorage.setItem("lastStationId", stationId);
         localStorage.setItem("lastCity", city);
-        
+
         // Get current condtion
         curr_temp = d.main.temp;
         windspeed = d.wind.speed;
-        
+
         daymode = 0;
-        
+
         if (!config.ColorScheme || config.ColorScheme === '' || config.ColorScheme == 'Auto') {
           auto_daymode = 1;
         }
@@ -1106,18 +1276,18 @@ function fetchOWMWeather(loc) {
           auto_daymode = 0;
           daymode = (config.ColorScheme == 'WhiteOnBlack') ? 0 : 1;
         }
-        
+
         if (d.sys.sunrise && d.sys.sunset) {
           sunrise = unixUTC2Local(d.sys.sunrise);
           sunset = unixUTC2Local(d.sys.sunset);
-          
+
           if (auto_daymode == 1) {
             if (!isNaN(sunrise) && !isNaN(sunset)) {
               // Calculate if the current time is between the sunrise and sunset
               // (Weather data provides the next sunrise and sunset, so we subtract 24 hours from those times
-              // if they are not the same date. Technically this could be off by a minute or 2, but it will 
+              // if they are not the same date. Technically this could be off by a minute or 2, but it will
               // be close enough)
-              if (curr_time >= addDays(sunset, (sunset.getDate() == curr_time.getDate()) ? 0 : -1 ) || 
+              if (curr_time >= addDays(sunset, (sunset.getDate() == curr_time.getDate()) ? 0 : -1 ) ||
                   curr_time < addDays(sunrise, (sunset.getDate() == curr_time.getDate()) ? 0 : -1)) {
                 // Nighttime
                 daymode = 0;
@@ -1128,19 +1298,19 @@ function fetchOWMWeather(loc) {
             }
           }
         }
-        
+
         // Set the status display on the Pebble to the time of the weather update
         status = 'Upd: ' + timeStr(curr_time);
-        
+
         if (locChanged == 1 || !lastForecastUpdate || ((curr_time - lastForecastUpdate) / 60000) >= 175) {
           // Now get the forecast data if last fetch was more than 3 hours ago or the station has changed
-          
+
           reqForecast.open('GET', 'http://api.openweathermap.org/data/2.5/forecast?id=' + stationId + '&appid=' + OWM_API_KEY, true);
           reqForecast.send(null);
-          
+
         } else {
           // Else just update the current data and settings
-          
+
           if (DEBUG) {
             console.log('Only current weather data fetched...');
             console.log('Current Temp: ' + formatTempK(curr_temp));
@@ -1163,7 +1333,7 @@ function fetchOWMWeather(loc) {
             console.log('Quite Time BT Vibes: ' + config.QTVibes);
             console.log('Quiet Time Fetch Weather: ' + config.QTFetch);
           }
-          
+
           // Send the current weather data and settings to the Pebble
           Pebble.sendAppMessage({
               "status":status,
@@ -1201,10 +1371,10 @@ function fetchOWMWeather(loc) {
               "condition":forecast.condition,
               "weather_fetched":1});
         }
-        
+
       } else {
         console.warn("Error: " + reqCurrent.status);
-        
+
         if (reqCurrent.status == 429) {
           // Server thinks we have made too many requests too quickly
           Pebble.sendAppMessage({
@@ -1218,14 +1388,14 @@ function fetchOWMWeather(loc) {
       }
     }
   };
-  
+
   reqForecast.onload = function(e) {
     if (reqForecast.readyState == 4) {
       if(reqForecast.status == 200) {
         // Successfully retrieved forecast weather data
-        
-        var d; 
-        
+
+        var d;
+
         try {
           // Parse weather data JSON
           d = JSON.parse(reqForecast.responseText);
@@ -1235,7 +1405,7 @@ function fetchOWMWeather(loc) {
             "weather_fetched":0});
           return;
         }
-        
+
         // Validate data
         if (!d.cod) {
           Pebble.sendAppMessage({
@@ -1248,35 +1418,35 @@ function fetchOWMWeather(loc) {
             "weather_fetched":0});
           return;
         }
-        
+
         localStorage.setItem('lastForecastUpdate', curr_time.toISOString());
-        
+
         today = { high: -999, low: 999, code: -1, condition: "" };
         tomorrow = { high: -999, low: 999, code: -1, condition: "" };
-        
+
         // Use 6am tomorrow as the end of the high/low weather data for today (shows low for today as the next overnight low)
         var todayEnd = new Date(curr_time);
         todayEnd.setHours(30, 0, 0, 0);
         // Use 6pm today as the end of the condition weather data for today if more than 12 hours away
         var todayEndCondition = new Date(curr_time);
         todayEndCondition.setHours(18, 0, 0, 0);
-        
+
         // Use 6am after tomorrow as the end of the high/low weather data for tomorrow
         var tomorrowEnd = addDays(todayEnd, 1);
         // Use 6pm tomorrow as the end of the condition weather data for tomorrow
         var tomorrowEndCondition = addDays(todayEndCondition, 1);
-        
+
         if (DEBUG) {
           console.log('Today End: ' + todayEnd);
           console.log('Today End Condition: ' + todayEndCondition);
           console.log('Tomorrow End: ' + tomorrowEnd);
           console.log('Tomorrow End Condition: ' + tomorrowEndCondition);
         }
-        
+
         var code, forecastTime;
         var today_cond_times = [];
         var tmrrw_cond_times = [];
-        
+
         for (var i = 0; i < d.list.length; i++) {
           forecastTime = unixUTC2Local(d.list[i].dt);
           if (forecastTime < todayEnd) {
@@ -1284,11 +1454,11 @@ function fetchOWMWeather(loc) {
             if (today.high == -999) today.high = curr_temp;
             if (today.low == 999) today.low = curr_temp;
             if (DEBUG) console.log("Today Forecast: " + forecastTime + ", High: " + formatTempK(d.list[i].main.temp_max) + ", Low: " + formatTempK(d.list[i].main.temp_min));
-            
+
             if (d.list[i].main.temp_max > today.high) today.high = d.list[i].main.temp_max;
-            
+
             if (d.list[i].main.temp_min < today.low) today.low = d.list[i].main.temp_min;
-            
+
             if (forecastTime <= todayEndCondition || ((forecastTime - curr_time) / 3600000) <= 12 ) {
               // If earlier than 6pm today or less than 12 hours in future get 'worst' weather condition for today
               // where 'worst' is defined by the order of the condition codes (higher = worse)
@@ -1308,29 +1478,29 @@ function fetchOWMWeather(loc) {
             }
           } else if (forecastTime < tomorrowEnd) {
             // Get high/low for tomorrow
-            
+
             // Start with the last high./low from today
             if (tomorrow.high == -999) {
-              if (today.high == -999) 
+              if (today.high == -999)
                 tomorrow.high = curr_temp;
               else
                 tomorrow.high = d.list[i-1].main.temp_max;
             }
             if (tomorrow.low == 999) {
-              if (today.low == 999) 
+              if (today.low == 999)
                 tomorrow.low = curr_temp;
               else
                 tomorrow.low = d.list[i-1].main.temp_min;
             }
-            
+
             if (DEBUG) console.log("Tomorrow Forecast: " + forecastTime + ", High: " + formatTempK(d.list[i].main.temp_max) + ", Low: " + formatTempK(d.list[i].main.temp_min));
-            
+
             if (d.list[i].main.temp_max > tomorrow.high) tomorrow.high = d.list[i].main.temp_max;
-            
+
             if (d.list[i].main.temp_min < tomorrow.low) tomorrow.low = d.list[i].main.temp_min;
-            
+
             if (DEBUG) console.log("Tomorrow - running high: " + formatTempK(tomorrow.high) + ", running low: " + formatTempK(tomorrow.low));
-            
+
             if (forecastTime <= tomorrowEndCondition) {
               // If earlier than 6pm tomorrow get 'worst' weather condition for tomorrow
               // where 'worst' is defined by the order of the condition codes (higher = worse)
@@ -1349,29 +1519,29 @@ function fetchOWMWeather(loc) {
               }
             }
           } else {
-            break;  
+            break;
           }
         }
-        
+
         // Add condition times for any forecasts of drizzle or worse
         today.condition += conditionTimes2Text(today_cond_times);
         tomorrow.condition += conditionTimes2Text(tmrrw_cond_times);
-        
+
         lastUpdate = new Date(curr_time);
         localStorage.setItem('lastUpdate', curr_time.toISOString());
         localStorage.setItem("forecastToday", JSON.stringify(today));
         localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
-        
+
         if (forecast_date.getDate() == curr_time.getDate())
           forecast = today;
         else
           forecast = tomorrow;
-        
+
         high = (forecast.high == -999 ? "" : formatTempK(forecast.high));
         low = (forecast.low == 999 ? "" : formatTempK(forecast.low));
         icon = (forecast.low == -1 ? 0 : forecast.code);
         condition = forecast.condition;
-        
+
         if (DEBUG) {
           console.log('Current Temp: ' + formatTempK(curr_temp));
           console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
@@ -1399,7 +1569,7 @@ function fetchOWMWeather(loc) {
           console.log('Quite Time BT Vibes: ' + config.QTVibes);
           console.log('Quiet Time Fetch Weather: ' + config.QTFetch);
         }
-        
+
         // Send the data to the Pebble
         Pebble.sendAppMessage({
             "status":status,
@@ -1436,10 +1606,10 @@ function fetchOWMWeather(loc) {
             "qt_bt_vibes":config.QTVibes,
             "qt_fetch_weather":config.QTFetch,
             "weather_fetched":1});
-        
+
       } else {
         console.warn("Error: " + reqForecast.status);
-        
+
         if (reqForecast.status == 429) {
           // Server thinks we have made too many requests too quickly
           Pebble.sendAppMessage({
@@ -1453,22 +1623,22 @@ function fetchOWMWeather(loc) {
       }
     }
   };
-  
+
   if (DEBUG) {
     console.log('Last update: ' + lastUpdate);
     console.log('Forecast data: ' + JSON.stringify(forecast));
     console.log('Mins since last update: ' + ((curr_time - lastUpdate) / 60000));
   }
-  
+
   if (lastUpdate && forecast && ((curr_time - lastUpdate) / 60000) <= 59) {
     // If less than 1 hour (use 59 minutes to account for any timestamp differences) and we have forecast data saved
     // then return the forecast data so the correct day forecast is shown at midnight and the forecast hour
-    
-    if (localStorage.getItem('lastCity')) 
+
+    if (localStorage.getItem('lastCity'))
       city = localStorage.getItem('lastCity');
     else
       city = "";
-    
+
     Pebble.sendAppMessage({
       "status":"Upd: " + timeStr(lastUpdate),
       "city":city,
@@ -1477,7 +1647,7 @@ function fetchOWMWeather(loc) {
       "low_temp":(forecast.low == 999 ? "" : formatTempK(forecast.low)),
       "icon":(forecast.low == -1 ? 0 : forecast.code),
       "condition":forecast.condition});
-    
+
   } else {
     // Initiate HTTP request for curent weather data
     reqCurrent.open('GET', 'http://api.openweathermap.org/data/2.5/weather?' + loc + '&appid=' + OWM_API_KEY, true);
@@ -1843,12 +2013,12 @@ Pebble.addEventListener("appmessage",
                               console.log('Cfg Time 24hr: ' + time24hr);
                             }
                           }
-                          
+
                           // Trigger location and weather fetch on command from Pebble
                           refreshWeather();
                         });
 
-Pebble.addEventListener("showConfiguration", 
+Pebble.addEventListener("showConfiguration",
                          function() {
                            if (DEBUG) console.log("Showing Settings...");
                            Pebble.openURL(clay.generateUrl());
