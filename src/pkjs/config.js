@@ -126,6 +126,10 @@ module.exports = [
           {
             "label": "OpenWeatherMap.org",
             "value": "1"
+          },
+          {
+            "label": "Weather.gov (NWS)",
+            "value": "2"
           }
         ]
       },

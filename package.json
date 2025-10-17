@@ -10,7 +10,7 @@
             "health"
         ],
         "displayName": "ForeCal",
-        "enableMultiJS": true,
+        "enableMultiJS": false,
         "messageKeys": {
             "auto_daymode": 14,
             "bt_vibes": 22,
@@ -56,7 +56,6 @@
                     "file": "images/ForeCal_MenuIcon.png",
                     "menuIcon": true,
                     "name": "IMAGE_MENUICON",
-                    "targetPlatforms": null,
                     "type": "bitmap"
                 },
                 {

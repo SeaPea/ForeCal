@@ -1,4 +1,4 @@
-var DEBUG = false;
+const DEBUG = true;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
 // (This is a free tier key so it doesn't allow for many requests)
@@ -8,7 +8,6 @@ var OWM_API_KEY = "106caae1620867404688360dcbd4bb3e";
 var Clay = require('./clay');
 var clayConfig = require('./config');
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
-
 
 var daymode = 0;
 var locationOptions = { "timeout": 15000, "maximumAge": 60000 }; 
@@ -41,6 +40,18 @@ var config = {
   QTFetch: 0,
   WeatherProvider: 0
 };
+
+// only call console.log if debug is enabled
+function log_message(msg, extra) {
+    if(!DEBUG) return;
+
+    if(extra){
+        console.log(`[App] ${msg}`, extra);
+        return;
+    }
+
+    console.log(`[App] ${msg}`);
+}
 
 function loadSettings() {
   
@@ -371,6 +382,141 @@ function codeFromYiD(weatherId) {
   }
 }
 
+// Convert/Reduce NWS (weather.gov) icon codes and shortForecast to our weather codes for icons
+// The icon URL format is like: https://api.weather.gov/icons/land/day/sct?size=medium
+// We extract the icon code from the URL path (e.g., "sct", "rain", "tsra")
+function codeFromNWSIcon(iconUrl, shortForecast) {
+  if (!iconUrl) return 0;
+
+  // Extract the icon code from the URL
+  // Format: https://api.weather.gov/icons/land/{day|night}/{code}?size=medium
+  // or with dual icons: .../day/rain/tsra?size=medium
+  var iconMatch = iconUrl.match(/\/icons\/land\/(?:day|night)\/([^?]+)/);
+  if (!iconMatch) return 0;
+
+  var iconPath = iconMatch[1];
+  var iconCodes = iconPath.split('/'); // Handle dual icons like "rain/tsra"
+  var primaryIcon = iconCodes[0];
+  var secondaryIcon = iconCodes.length > 1 ? iconCodes[1] : null;
+
+  // Use shortForecast as additional context
+  var forecast = (shortForecast || '').toLowerCase();
+
+  // Priority order: severe weather → thunderstorms → snow → ice/hail → rain → fog → wind → temp → clouds
+
+  // Severe weather (19, 18, 17)
+  if (primaryIcon === 'hurricane' || primaryIcon.includes('hurricane') || forecast.includes('hurricane')) {
+    return 19; // Hurricane
+  }
+  if (primaryIcon === 'tornado' || primaryIcon.includes('tornado') || forecast.includes('tornado')) {
+    return 18; // Tornado
+  }
+  if (primaryIcon === 'tropical_storm' || primaryIcon.includes('tropical') || forecast.includes('tropical storm')) {
+    return 17; // Storm/Tropical Storm
+  }
+
+  // Thunderstorms (16, 15, 14)
+  if (primaryIcon === 'tsra' || primaryIcon === 'tsra_sct' || primaryIcon === 'tsra_hi' ||
+      primaryIcon.includes('tsra') || secondaryIcon === 'tsra' || forecast.includes('thunderstorm')) {
+    // tsra_sct = scattered thunderstorms, tsra_hi = isolated/slight chance
+    if (primaryIcon === 'tsra_sct' || forecast.includes('scattered')) {
+      return 16; // Scattered Thunderstorms
+    } else if (primaryIcon === 'tsra_hi' || forecast.includes('isolated') || forecast.includes('slight chance')) {
+      return 15; // Isolated Thunderstorms
+    } else {
+      return 14; // Thundershowers
+    }
+  }
+
+  // Blizzard (13) - severe snow condition
+  if (primaryIcon === 'blizzard' || forecast.includes('blizzard')) {
+    return 13; // Snow (blizzard is severe snow)
+  }
+
+  // Snow conditions (13, 11, 10)
+  if (primaryIcon === 'snow' || primaryIcon === 'snow_showers' || primaryIcon.includes('snow') ||
+      forecast.includes('snow')) {
+    // Check for mixed conditions first
+    if (primaryIcon === 'rain_snow' || primaryIcon === 'snow_sleet' || primaryIcon === 'rain_sleet' ||
+        primaryIcon.includes('rain_snow') || primaryIcon.includes('snow_sleet') ||
+        forecast.includes('rain and snow') || forecast.includes('wintry mix') || forecast.includes('rain snow')) {
+      return 10; // Mixed Snow
+    }
+    // Check for light snow or snow showers
+    if (primaryIcon === 'snow_showers' || forecast.includes('light snow') ||
+        forecast.includes('flurries') || forecast.includes('snow showers')) {
+      return 11; // Light Snow
+    }
+    // Heavy or regular snow (including blowing snow)
+    if (forecast.includes('blowing snow') || forecast.includes('heavy snow')) {
+      return 13; // Snow
+    }
+    return 13; // Snow (default for snow)
+  }
+
+  // Freezing rain / Ice / Hail / Sleet (12)
+  if (primaryIcon === 'fzra' || primaryIcon === 'sleet' || primaryIcon === 'ice_pellets' ||
+      primaryIcon.includes('fzra') || primaryIcon.includes('sleet') ||
+      primaryIcon.includes('ice_pellets') || primaryIcon.includes('hail') ||
+      forecast.includes('freezing') || forecast.includes('sleet') ||
+      forecast.includes('ice pellets') || forecast.includes('hail')) {
+    return 12; // Hail/Ice
+  }
+
+  // Rain conditions (9, 8)
+  if (primaryIcon === 'rain' || primaryIcon === 'rain_showers' ||
+      primaryIcon.includes('rain') || primaryIcon.includes('showers') ||
+      forecast.includes('rain') || forecast.includes('showers')) {
+    // Check for drizzle
+    if (forecast.includes('drizzle')) {
+      return 8; // Drizzle
+    }
+    return 9; // Rain
+  }
+
+  // Fog / Low visibility (7)
+  if (primaryIcon === 'fog' || primaryIcon === 'dust' || primaryIcon === 'smoke' || primaryIcon === 'haze' ||
+      primaryIcon.includes('fog') || primaryIcon.includes('dust') ||
+      primaryIcon.includes('smoke') || forecast.includes('fog') ||
+      forecast.includes('haze') || forecast.includes('smoke') ||
+      forecast.includes('dust')) {
+    return 7; // Low Visibility
+  }
+
+  // Wind (6) - includes wind_skc, wind_few, wind_sct, wind_bkn, wind_ovc
+  if (primaryIcon.startsWith('wind_') || primaryIcon.includes('wind') ||
+      forecast.includes('windy') || forecast.includes('breezy') || forecast.includes('blustery')) {
+    return 6; // Windy
+  }
+
+  // Temperature extremes (5, 4)
+  if (primaryIcon === 'hot' || forecast.includes('hot')) {
+    return 5; // Hot
+  }
+  if (primaryIcon === 'cold' || forecast.includes('cold')) {
+    return 4; // Cold
+  }
+
+  // Cloud cover (3, 2, 1) - use icon codes
+  // skc = sky clear, few = few clouds, sct = scattered, bkn = broken, ovc = overcast
+  if (primaryIcon === 'skc' || forecast.includes('clear') || forecast.includes('sunny')) {
+    return 1; // Sunny/Clear
+  }
+  if (primaryIcon === 'few' || primaryIcon === 'sct' ||
+      forecast.includes('partly cloudy') || forecast.includes('mostly sunny') ||
+      forecast.includes('partly sunny') || forecast.includes('mostly clear')) {
+    return 2; // Partly Cloudy
+  }
+  if (primaryIcon === 'bkn' || primaryIcon === 'ovc' ||
+      forecast.includes('mostly cloudy') || forecast.includes('cloudy') ||
+      forecast.includes('overcast')) {
+    return 3; // Cloudy
+  }
+
+  // Default
+  return 0; // N/A
+}
+
 // Add specified number of days to a Date
 function addDays(date, days) {
   var result = new Date(date);
@@ -537,11 +683,15 @@ function formatSpeedmph(mph) {
 function locationSuccess(pos) {
   // Got our Lat/Long so now fetch the weather data
   var coordinates = pos.coords;
-  if (DEBUG) console.log("GPS location: " + coordinates.latitude + ", " + coordinates.longitude);
-  if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1)
+  log_message("GPS location: " + coordinates.latitude + ", " + coordinates.longitude);
+
+  if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
     fetchOWMWeather("lat=" + coordinates.latitude + "&lon=" + coordinates.longitude);
-  else
+  } else if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 2) {
+    fetchNWSWeather(coordinates.latitude, coordinates.longitude);
+  } else {
     fetchYWeather("(" + coordinates.latitude + "," + coordinates.longitude + ")");
+  }
 }
 
 function locationError(err) {
@@ -553,19 +703,27 @@ function locationError(err) {
 }
 
 function refreshWeather() {
-  
+
   if (config.WeatherLoc) {
     if (DEBUG) console.log('Fetching weather using fixed location: ' + config.WeatherLoc);
-    if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1)
+    if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
       fetchOWMWeather("q=" + encodeURIComponent(config.WeatherLoc));
-    else
+    } else if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 2) {
+      // For NWS, we need to geocode the location first
+      // For now, just show an error - user should use GPS for NWS
+      Pebble.sendAppMessage({
+        "city":"NWS: Use GPS",
+        "weather_fetched":0
+      });
+    } else {
       fetchYWeather(encodeURIComponent(config.WeatherLoc));
+    }
   } else {
     // Trigger weather refresh by fetching location
     if (DEBUG) console.log('Getting GPS location for weather');
     navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
   }
-  
+
 }
 
 function fetchYWeather(loc) {
@@ -1324,6 +1482,345 @@ function fetchOWMWeather(loc) {
     // Initiate HTTP request for curent weather data
     reqCurrent.open('GET', 'http://api.openweathermap.org/data/2.5/weather?' + loc + '&appid=' + OWM_API_KEY, true);
     reqCurrent.send(null);
+  }
+}
+
+// Fetch the weather data from the NWS (weather.gov) web service and transmit to Pebble
+function fetchNWSWeather(lat, lon) {
+
+  if (DEBUG) console.log("### FETCHING NWS WEATHER ###");
+  if (DEBUG) console.log('Using coordinates: ' + lat + ', ' + lon);
+
+  var curr_time = new Date();
+
+  var city, status, units, country = 'US';
+  var curr_temp, sunrise, sunset, locChanged = 0, stationId = 0;
+  var forecast_day, forecast_date, high, low, icon, condition;
+  var auto_daymode, windspeed;
+  var today, tomorrow, forecast;
+
+  if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour ||
+                                    (curr_time.getHours() == config.ForecastHour &&
+                                     curr_time.getMinutes() >= config.ForecastMin))) {
+    // Between set time and Midnight, show tomorrow's forecast
+    forecast_day = 'Tomorrow';
+    forecast_date = addDays(new Date(), 1);
+    forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
+  } else {
+    // At all other times, show today's forecast
+    forecast_day = 'Today';
+    forecast_date = new Date();
+    if (lastUpdate && lastUpdate.getDate() != curr_time.getDate())
+      // If last update and current time are different days, we just crossed over midnight so show tomorrow forecast, but call it 'today'
+      // to save all users trying to update at midnight and causing requests to hit limit
+      forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
+    else
+      forecast = JSON.parse(localStorage.getItem('forecastToday'));
+  }
+
+  // Setup HTTP requests for points endpoint and forecast endpoint
+  var reqPoints = new XMLHttpRequest();
+  var reqForecast = new XMLHttpRequest();
+
+  // First, get the grid point information
+  reqPoints.onload = function(e) {
+    if (reqPoints.readyState == 4) {
+      if (reqPoints.status == 200) {
+        // Successfully retrieved points data
+
+        var d;
+
+        try {
+          // Parse points data JSON
+          d = JSON.parse(reqPoints.responseText);
+        } catch(ex) {
+          Pebble.sendAppMessage({
+            "city":"Err: Bad Data",
+            "weather_fetched":0});
+          return;
+        }
+
+        // Validate data
+        if (!d.properties) {
+          Pebble.sendAppMessage({
+            "city":"Err: Unknown Data",
+            "weather_fetched":0});
+          return;
+        }
+
+        // Get the forecast URL and city information
+        var forecastUrl = d.properties.forecast;
+        city = d.properties.relativeLocation && d.properties.relativeLocation.properties ?
+               d.properties.relativeLocation.properties.city : "Unknown";
+
+        if (!forecastUrl) {
+          Pebble.sendAppMessage({
+            "city":"Err: No Forecast URL",
+            "weather_fetched":0});
+          return;
+        }
+
+        // Determine temperature and wind-speed units
+        if (!config.TempUnit || config.TempUnit === '' || config.TempUnit === 'Auto') {
+          // NWS is US-only, so default to imperial
+          units = 'imperial';
+        } else {
+          if (config.TempUnit == 'F')
+            units = 'imperial';
+          else
+            units = 'metric';
+        }
+
+        lastUnits = units;
+        localStorage.setItem('lastUnits', lastUnits);
+
+        // Use grid coordinates as station ID
+        stationId = d.properties.gridId + '_' + d.properties.gridX + '_' + d.properties.gridY;
+        locChanged = (stationId == lastStationId ? 0 : 1);
+        lastStationId = stationId;
+        localStorage.setItem("lastStationId", stationId);
+        localStorage.setItem("lastCity", city);
+
+        // Now fetch the forecast data
+        reqForecast.open('GET', forecastUrl, true);
+        reqForecast.setRequestHeader('User-Agent', 'PebbleForeCal/4.0 (contact: user@example.com)');
+        reqForecast.send(null);
+
+      } else {
+        console.warn("NWS Points Error: " + reqPoints.status);
+        Pebble.sendAppMessage({
+          "city":"NWS Err: " + reqPoints.status,
+          "weather_fetched":0});
+      }
+    }
+  };
+
+  reqForecast.onload = function(e) {
+    if (reqForecast.readyState == 4) {
+      if (reqForecast.status == 200) {
+        // Successfully retrieved forecast data
+
+        var d;
+
+        try {
+          // Parse forecast data JSON
+          d = JSON.parse(reqForecast.responseText);
+        } catch(ex) {
+          Pebble.sendAppMessage({
+            "city":"Err: Bad Data",
+            "weather_fetched":0});
+          return;
+        }
+
+        // Validate data
+        if (!d.properties || !d.properties.periods || d.properties.periods.length === 0) {
+          Pebble.sendAppMessage({
+            "city":"Err: No Forecast Data",
+            "weather_fetched":0});
+          return;
+        }
+
+        var periods = d.properties.periods;
+
+        // Get current conditions from first period
+        curr_temp = periods[0].temperature;
+        windspeed = 0; // NWS doesn't provide numeric wind speed easily, would need to parse string
+
+        // Parse wind speed if available (format: "5 to 10 mph")
+        if (periods[0].windSpeed) {
+          var windMatch = periods[0].windSpeed.match(/(\d+)\s*(?:to\s*(\d+))?\s*mph/i);
+          if (windMatch) {
+            windspeed = windMatch[2] ? parseInt(windMatch[2]) : parseInt(windMatch[1]);
+          }
+        }
+
+        daymode = 0;
+
+        if (!config.ColorScheme || config.ColorScheme === '' || config.ColorScheme == 'Auto') {
+          auto_daymode = 1;
+        } else {
+          auto_daymode = 0;
+          daymode = (config.ColorScheme == 'WhiteOnBlack') ? 0 : 1;
+        }
+
+        // Determine day/night mode from isDaytime flag
+        if (auto_daymode == 1) {
+          daymode = periods[0].isDaytime ? 1 : 0;
+        }
+
+        // Extract sunrise/sunset times (NWS doesn't provide these directly)
+        // We'll use approximate times based on isDaytime transitions
+        sunrise = new Date();
+        sunset = new Date();
+        sunrise.setHours(6, 0, 0, 0);
+        sunset.setHours(18, 0, 0, 0);
+
+        // Set the status display on the Pebble to the time of the weather update
+        status = 'Upd: ' + timeStr(curr_time);
+
+        localStorage.setItem('lastForecastUpdate', curr_time.toISOString());
+
+        // Process forecast periods to get today and tomorrow
+        today = { high: -999, low: 999, code: -1, condition: "" };
+        tomorrow = { high: -999, low: 999, code: -1, condition: "" };
+
+        var todayDate = new Date();
+        todayDate.setHours(0, 0, 0, 0);
+        var tomorrowDate = addDays(todayDate, 1);
+
+        for (var i = 0; i < periods.length && i < 14; i++) {
+          var period = periods[i];
+          var periodDate = new Date(period.startTime);
+          periodDate.setHours(0, 0, 0, 0);
+
+          var isToday = (periodDate.getTime() === todayDate.getTime());
+          var isTomorrow = (periodDate.getTime() === tomorrowDate.getTime());
+
+          if (isToday) {
+            // Update today's forecast
+            if (period.isDaytime) {
+              if (period.temperature > today.high || today.high === -999) {
+                today.high = period.temperature;
+              }
+            } else {
+              if (period.temperature < today.low || today.low === 999) {
+                today.low = period.temperature;
+              }
+            }
+
+            // Get the most significant weather condition for today
+            var code = codeFromNWSIcon(period.icon, period.shortForecast);
+            if (code > today.code) {
+              today.code = code;
+              today.condition = period.shortForecast;
+            }
+          } else if (isTomorrow) {
+            // Update tomorrow's forecast
+            if (period.isDaytime) {
+              if (period.temperature > tomorrow.high || tomorrow.high === -999) {
+                tomorrow.high = period.temperature;
+              }
+            } else {
+              if (period.temperature < tomorrow.low || tomorrow.low === 999) {
+                tomorrow.low = period.temperature;
+              }
+            }
+
+            // Get the most significant weather condition for tomorrow
+            var code2 = codeFromNWSIcon(period.icon, period.shortForecast);
+            if (code2 > tomorrow.code) {
+              tomorrow.code = code2;
+              tomorrow.condition = period.shortForecast;
+            }
+          }
+        }
+
+        lastUpdate = new Date(curr_time);
+        localStorage.setItem('lastUpdate', curr_time.toISOString());
+        localStorage.setItem("forecastToday", JSON.stringify(today));
+        localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
+
+        if (forecast_date.getDate() == curr_time.getDate())
+          forecast = today;
+        else
+          forecast = tomorrow;
+
+        high = (forecast.high == -999 ? "" : formatTempF(forecast.high));
+        low = (forecast.low == 999 ? "" : formatTempF(forecast.low));
+        icon = (forecast.code == -1 ? 0 : forecast.code);
+        condition = forecast.condition;
+
+        if (DEBUG) {
+          console.log('Current Temp: ' + formatTempF(curr_temp));
+          console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
+          console.log('Sunset: ' + sunset.getHours() + ':' + sunset.getMinutes());
+          console.log('Forecast Day: ' + forecast_day);
+          console.log('Forecast Date: ' + forecast_date);
+          console.log('Low: ' + low);
+          console.log('High: ' + high);
+          console.log('Condition: ' + condition);
+          console.log('Icon: ' + icon);
+          console.log('Daymode: ' + daymode);
+          console.log('Auto Daymode: ' + auto_daymode);
+          console.log('Location Changed: ' + locChanged);
+          console.log('Wind Speed: ' + formatSpeedmph(windspeed));
+        }
+
+        // Send the data to the Pebble
+        Pebble.sendAppMessage({
+            "status":status,
+            "curr_temp":formatTempF(curr_temp),
+            "forecast_day":forecast_day,
+            "high_temp":high,
+            "low_temp":low,
+            "icon":icon,
+            "condition":condition,
+            "daymode":daymode,
+            "city":city,
+            "sun_rise_hour":sunrise.getHours(),
+            "sun_rise_min":sunrise.getMinutes(),
+            "sun_set_hour":sunset.getHours(),
+            "sun_set_min":sunset.getMinutes(),
+            "auto_daymode":auto_daymode,
+            "first_day":config.FirstDay,
+            "cal_offset":config.CalOffset,
+            "show_bt":config.ShowBT,
+            "bt_vibes":config.BTVibes,
+            "show_batt":config.ShowBatt,
+            "show_week":config.ShowWeek,
+            "show_steps":config.ShowSteps,
+            "loc_changed":locChanged,
+            "date_format":config.DateFormat,
+            "show_wind":config.ShowWind,
+            "wind_speed":formatSpeedmph(windspeed),
+            "forecast_hour":config.ForecastHour,
+            "forecast_min":config.ForecastMin,
+            "qt_start_hour":config.QTStartHour,
+            "qt_start_min":config.QTStartMin,
+            "qt_end_hour":config.QTEndHour,
+            "qt_end_min":config.QTEndMin,
+            "qt_bt_vibes":config.QTVibes,
+            "qt_fetch_weather":config.QTFetch,
+            "weather_fetched":1});
+
+      } else {
+        console.warn("NWS Forecast Error: " + reqForecast.status);
+        Pebble.sendAppMessage({
+          "city":"NWS Err: " + reqForecast.status,
+          "weather_fetched":0});
+      }
+    }
+  };
+
+  if (DEBUG) {
+    console.log('Last update: ' + lastUpdate);
+    console.log('Forecast data: ' + JSON.stringify(forecast));
+    console.log('Mins since last update: ' + ((curr_time - lastUpdate) / 60000));
+  }
+
+  if (lastUpdate && forecast && ((curr_time - lastUpdate) / 60000) <= 59) {
+    // If less than 1 hour (use 59 minutes to account for any timestamp differences) and we have forecast data saved
+    // then return the forecast data so the correct day forecast is shown at midnight and the forecast hour
+
+    if (localStorage.getItem('lastCity'))
+      city = localStorage.getItem('lastCity');
+    else
+      city = "";
+
+    Pebble.sendAppMessage({
+      "status":"Upd: " + timeStr(lastUpdate),
+      "city":city,
+      "forecast_day":forecast_day,
+      "high_temp":(forecast.high == -999 ? "" : formatTempF(forecast.high)),
+      "low_temp":(forecast.low == 999 ? "" : formatTempF(forecast.low)),
+      "icon":(forecast.code == -1 ? 0 : forecast.code),
+      "condition":forecast.condition});
+
+  } else {
+    // Initiate HTTP request for points data from NWS
+    reqPoints.open('GET', 'https://api.weather.gov/points/' + lat + ',' + lon, true);
+    reqPoints.setRequestHeader('User-Agent', 'PebbleForeCal/4.0 (contact: user@example.com)');
+    reqPoints.send(null);
   }
 }
 
