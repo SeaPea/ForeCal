@@ -4,7 +4,7 @@
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
-#define SAVE_VER 5
+#define SAVE_VER 6
 #define MAX_RETRIES 3
 #define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
@@ -121,6 +121,7 @@ enum MessageKey {
   QT_FETCH_WEATHER_KEY = 33,
   SHOW_WEEK_KEY = 34,
   SHOW_STEPS_KEY = 35,
+  WEATHER_UPDATE_INTERVAL_KEY = 36,
   WEATHER_FETCHED_KEY = 99
 };
 
@@ -688,6 +689,13 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
     case QT_FETCH_WEATHER_KEY:
       s_savedata.qt_fetch_weather = (new_tuple->value->uint8 == 1);
       break;
+    case WEATHER_UPDATE_INTERVAL_KEY:
+      s_savedata.weather_update_interval = new_tuple->value->uint16;
+      if (s_savedata.weather_update_interval < 1) {
+        s_savedata.weather_update_interval = 60; // Default to 60 minutes if invalid
+      }
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Weather update interval set to: %d minutes", s_savedata.weather_update_interval);
+      break;
     case WEATHER_FETCHED_KEY:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "WEATHER FETCHED: %d", new_tuple->value->uint8);
       if (new_tuple->value->uint8 == 1) {
@@ -759,27 +767,31 @@ static void handle_tick(struct tm *t, TimeUnits units_changed) {
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
     
-    // Update the weather every 60 minutes as long as quiet time is not active or set to continue fetching during quiet time
+    // Update the weather at the configured interval as long as quiet time is not active or set to continue fetching during quiet time
     if (!loading) {
+      // Use configured interval (in minutes), default to 60 if not set
+      uint16_t update_interval_minutes = (s_savedata.weather_update_interval > 0) ? s_savedata.weather_update_interval : 60;
+      time_t update_interval_seconds = (time_t)(update_interval_minutes * 60);
+
       if (s_savedata.qt_fetch_weather || !quiet_time_active()) {
-        if (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= 3600 + (qt_delay ? quiet_time_duration() : 0))) {
+        if (s_savedata.last_update == 0 || ((time(NULL) - s_savedata.last_update) >= update_interval_seconds + (qt_delay ? quiet_time_duration() : 0))) {
           // Record the time when the update attempt started without seconds and request weather update
           last_update_attempt = time(NULL);
           last_update_attempt -= last_update_attempt % 60;
-          update_weather(); 
+          update_weather();
           qt_delay = false;
-        } else if ((t->tm_hour == 0 && t->tm_min == 0) || 
+        } else if ((t->tm_hour == 0 && t->tm_min == 0) ||
                    (t->tm_hour == s_savedata.forecast_hour && t->tm_min == s_savedata.forecast_min)) {
           // Request weather update at midnight and the forecast today/tomorrow transition, which should just switch the forecast day without making web requests
-          update_weather(); 
+          update_weather();
         }
       } else {
         // Quiet time active. Record if next update was going to be during Quiet Time so we know to extend next update after Quiet Time by the duration
         // of the Quiet Time so that we don't have all users updating weather at the end of Quiet Time which may be left as default in many cases.
-        if (s_savedata.last_update != 0 || ((time(NULL) - s_savedata.last_update) >= 3600)) 
+        if (s_savedata.last_update != 0 || ((time(NULL) - s_savedata.last_update) >= update_interval_seconds))
           qt_delay = true;
       }
-    } 
+    }
     
     update_sun_layer(t);
   }
@@ -1097,20 +1109,24 @@ static void window_load(Window *window) {
   s_savedata.qt_fetch_weather = false;
   s_savedata.show_week = false;
   s_savedata.show_steps = false;
-  
+  s_savedata.weather_update_interval = 60; // Default to 60 minutes
+
   if (persist_exists(SAVE_VER_KEY)) {
-    // Save version 4 reset config
+    // Handle different save versions for migration
     if (persist_exists(SAVEDATA_KEY)) {
       switch (persist_read_int(SAVE_VER_KEY)) {
         case 4:
-          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.show_week)+sizeof(s_savedata.show_steps)));
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.show_week)+sizeof(s_savedata.show_steps)+sizeof(s_savedata.weather_update_interval)));
           break;
         case 5:
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - sizeof(s_savedata.weather_update_interval));
+          break;
+        case 6:
         default:
           persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
           break;
       }
-    } 
+    }
   }
   
   GRect bounds = layer_get_bounds(window_layer); 
@@ -1306,10 +1322,14 @@ static void window_load(Window *window) {
   
   // Init time and date
   handle_tick(t, MINUTE_UNIT | HOUR_UNIT | DAY_UNIT);
-  
-  // If it has been longer than 60 minutes since last update or last update is not known
+
+  // Use configured interval (in minutes), default to 60 if not set
+  uint16_t update_interval_minutes = (s_savedata.weather_update_interval > 0) ? s_savedata.weather_update_interval : 60;
+  time_t update_interval_seconds = (time_t)(update_interval_minutes * 60);
+
+  // If it has been longer than the configured interval since last update or last update is not known
   // or we're not showing the correct forecast day then we need to run an update
-  bool need_update = (s_savedata.last_update == 0 || ((temp - s_savedata.last_update) >= 3600) ||
+  bool need_update = (s_savedata.last_update == 0 || ((temp - s_savedata.last_update) >= update_interval_seconds) ||
                      strcmp(s_savedata.forecast_day, show_forecast_tomorrow() ? "Tomorrow" : "Today") != 0);
   
   // Initialize weather data UI
@@ -1348,6 +1368,7 @@ static void window_load(Window *window) {
     TupletInteger(QT_END_MIN_KEY, s_savedata.qt_end_min),
     TupletInteger(QT_BT_VIBES_KEY, s_savedata.qt_bt_vibes),
     TupletInteger(QT_FETCH_WEATHER_KEY, s_savedata.qt_fetch_weather),
+    TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, s_savedata.weather_update_interval),
     TupletInteger(WEATHER_FETCHED_KEY, 0)
   };
   

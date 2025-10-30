@@ -47,6 +47,7 @@
             "sun_set_min": 13,
             "time_24hr": 20,
             "weather_fetched": 99,
+            "weather_update_interval": 36,
             "wind_speed": 25
         },
         "projectType": "native",

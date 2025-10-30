@@ -53,4 +53,5 @@ typedef struct savedata {
     bool qt_fetch_weather;
     bool show_week;
     bool show_steps;
+    uint16_t weather_update_interval;
  } __attribute__((__packed__)) savedata_t;
