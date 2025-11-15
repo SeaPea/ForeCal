@@ -130,6 +130,13 @@ module.exports = [
         ]
       },
       {
+        "type": "toggle",
+        "appKey": "PreferNWS",
+        "label": "Prefer NWS (weather.gov) for USA locations",
+        "description": "When enabled, will attempt to use NWS first. Automatically falls back to the selected provider above if the location is outside USA coverage.",
+        "defaultValue": false
+      },
+      {
         "type": "input",
         "appKey": "ForecastTime",
         "defaultValue": "18:00",
@@ -145,20 +152,32 @@ module.exports = [
         "defaultValue": "Auto",
         "label": "Temp/Wind Speed Units",
         "options": [
-          { 
-            "label": "Auto", 
-            "value": "Auto" 
+          {
+            "label": "Auto",
+            "value": "Auto"
           },
-          { 
+          {
             "label": "Celcius, m/s",
-            "value": "C" 
+            "value": "C"
           },
-          { 
+          {
             "label": "Fahrenheit, mph",
-            "value": "F" 
+            "value": "F"
           }
         ],
         "attributes": {
+          "required": "required"
+        }
+      },
+      {
+        "type": "input",
+        "appKey": "WeatherUpdateInterval",
+        "defaultValue": "60",
+        "label": "Weather Update Interval (minutes)",
+        "description": "How often to fetch weather data from the API. Default is 60 minutes. Lower values may drain battery faster.",
+        "attributes": {
+          "type": "number",
+          "min": "1",
           "required": "required"
         }
       }
