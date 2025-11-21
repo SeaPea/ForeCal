@@ -1,4 +1,4 @@
-const DEBUG = false;
+const DEBUG = true;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
 // (This is a free tier key so it doesn't allow for many requests)
@@ -448,13 +448,14 @@ function codeFromNWSIcon(iconUrl, shortForecast) {
   }
 
   // Cloud cover (3, 2, 1) - use icon codes
-  // skc = sky clear, few = few clouds, sct = scattered, bkn = broken, ovc = overcast
-  if (primaryIcon === 'skc' || forecast.includes('clear') || forecast.includes('sunny')) {
+  // skc = sky clear, few = few clouds (0-25%), sct = scattered (25-50%), bkn = broken (50-75%), ovc = overcast (75-100%)
+  if (primaryIcon === 'skc' || primaryIcon === 'few' ||
+      forecast.includes('clear') || forecast.includes('sunny') || forecast.includes('mostly clear')) {
     return 1; // Sunny/Clear
   }
-  if (primaryIcon === 'few' || primaryIcon === 'sct' ||
+  if (primaryIcon === 'sct' ||
       forecast.includes('partly cloudy') || forecast.includes('mostly sunny') ||
-      forecast.includes('partly sunny') || forecast.includes('mostly clear')) {
+      forecast.includes('partly sunny')) {
     return 2; // Partly Cloudy
   }
   if (primaryIcon === 'bkn' || primaryIcon === 'ovc' ||
@@ -1887,17 +1888,19 @@ function fetchNWSWeather(lat, lon) {
               if (period.temperature > today.high || today.high === -999) {
                 today.high = period.temperature;
               }
+
+              // Get the most significant weather condition for today (daytime only)
+              var code = codeFromNWSIcon(period.icon, period.shortForecast);
+              log_message('Period ' + i + ' (' + period.name + '): icon=' + period.icon + ', forecast=' + period.shortForecast + ', code=' + code);
+              if (code > today.code) {
+                today.code = code;
+                today.condition = period.shortForecast;
+                log_message('  -> Updated today.code to ' + code + ', condition: ' + period.shortForecast);
+              }
             } else {
               if (period.temperature < today.low || today.low === 999) {
                 today.low = period.temperature;
               }
-            }
-
-            // Get the most significant weather condition for today
-            var code = codeFromNWSIcon(period.icon, period.shortForecast);
-            if (code > today.code) {
-              today.code = code;
-              today.condition = period.shortForecast;
             }
           } else if (isTomorrow) {
             // Update tomorrow's forecast
@@ -1905,17 +1908,17 @@ function fetchNWSWeather(lat, lon) {
               if (period.temperature > tomorrow.high || tomorrow.high === -999) {
                 tomorrow.high = period.temperature;
               }
+
+              // Get the most significant weather condition for tomorrow (daytime only)
+              var code2 = codeFromNWSIcon(period.icon, period.shortForecast);
+              if (code2 > tomorrow.code) {
+                tomorrow.code = code2;
+                tomorrow.condition = period.shortForecast;
+              }
             } else {
               if (period.temperature < tomorrow.low || tomorrow.low === 999) {
                 tomorrow.low = period.temperature;
               }
-            }
-
-            // Get the most significant weather condition for tomorrow
-            var code2 = codeFromNWSIcon(period.icon, period.shortForecast);
-            if (code2 > tomorrow.code) {
-              tomorrow.code = code2;
-              tomorrow.condition = period.shortForecast;
             }
           }
         }
