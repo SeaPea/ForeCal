@@ -763,7 +763,17 @@ static uint16_t quiet_time_duration() {
 // Handle clock change events
 static void handle_tick(struct tm *t, TimeUnits units_changed) {
   if ((units_changed & MINUTE_UNIT) != 0) {
-    clock_copy_time_string(current_time, sizeof(current_time));
+    // Format time manually to avoid platform-specific differences with clock_copy_time_string()
+    // that can cause display issues with SUBSET fonts (e.g., leading spaces on some platforms)
+    if (clock_is_24h_style()) {
+      strftime(current_time, sizeof(current_time), "%H:%M", t);
+    } else {
+      strftime(current_time, sizeof(current_time), "%I:%M", t);
+      // Remove leading zero for 12-hour format (e.g., "09:32" -> "9:32")
+      if (current_time[0] == '0') {
+        memmove(current_time, current_time + 1, sizeof(current_time) - 1);
+      }
+    }
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
     
