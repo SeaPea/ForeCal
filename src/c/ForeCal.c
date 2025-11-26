@@ -1343,6 +1343,8 @@ static void window_load(Window *window) {
                      strcmp(s_savedata.forecast_day, show_forecast_tomorrow() ? "Tomorrow" : "Today") != 0);
   
   // Initialize weather data UI
+  // Note: WIND_SPEED_KEY is NOT included in initial_values - it will be sent by JS when weather is fetched
+  // Including it here causes a crash on restart (possibly due to buffer/sync issues)
   Tuplet initial_values[] = {
     MyTupletCString(WEATHER_STATUS_KEY, s_savedata.status),
     MyTupletCString(WEATHER_CURR_TEMP_KEY, s_savedata.curr_temp),
@@ -1352,7 +1354,7 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_ICON_KEY, s_savedata.icon),
     MyTupletCString(WEATHER_CONDITION_KEY, s_savedata.condition),
     TupletInteger(WEATHER_DAYMODE_KEY, s_savedata.daymode ? 1 : 0),
-    TupletCString(WEATHER_CITY_KEY, (need_update ? "Fetching..." : s_savedata.city)), 
+    TupletCString(WEATHER_CITY_KEY, (need_update ? "Fetching..." : s_savedata.city)),
     TupletInteger(WEATHER_SUN_RISE_HOUR_KEY, s_savedata.sun_rise_hour),
     TupletInteger(WEATHER_SUN_RISE_MIN_KEY, s_savedata.sun_rise_min),
     TupletInteger(WEATHER_SUN_SET_HOUR_KEY, s_savedata.sun_set_hour),
@@ -1369,7 +1371,7 @@ static void window_load(Window *window) {
     TupletInteger(LOC_CHANGED_KEY, 0),
     TupletInteger(DATE_FORMAT_KEY, s_savedata.date_format),
     TupletInteger(SHOW_WIND_KEY, s_savedata.show_wind ? 1 : 0),
-    MyTupletCString(WIND_SPEED_KEY, s_savedata.wind_speed),
+    // WIND_SPEED_KEY removed - causes crash on restart
     TupletInteger(FORECAST_HOUR_KEY, s_savedata.forecast_hour),
     TupletInteger(FORECAST_MIN_KEY, s_savedata.forecast_min),
     TupletInteger(QT_START_HOUR_KEY, s_savedata.qt_start_hour),
