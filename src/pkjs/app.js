@@ -130,6 +130,39 @@ function saveSettings() {
     daymode = 0;
   } else if (config.ColorScheme == 'BlackOnWhite') {
     daymode = 1;
+  } else {
+    // Auto mode - calculate daymode immediately using SunCalc and current location
+    // This prevents the display from defaulting to light mode while waiting for weather refresh
+    navigator.geolocation.getCurrentPosition(
+      function(pos) {
+        var curr_time = new Date();
+        var sunTimes = SunCalc.getTimes(curr_time, pos.coords.latitude, pos.coords.longitude);
+        var sunrise = sunTimes.sunrise;
+        var sunset = sunTimes.sunset;
+
+        if (curr_time >= sunset || curr_time < sunrise) {
+          daymode = 0; // Nighttime
+        } else {
+          daymode = 1; // Daytime
+        }
+
+        if (DEBUG) console.log('Auto daymode calculated immediately: ' + daymode);
+
+        // Send immediate daymode update to watch
+        Pebble.sendAppMessage({
+          "daymode": daymode,
+          "auto_daymode": 1
+        }, function() {
+          if (DEBUG) console.log('Immediate daymode update sent successfully: ' + (daymode ? 'true' : 'false'));
+        }, function(e) {
+          if (DEBUG) console.log('Failed to send immediate daymode update: ' + JSON.stringify(e));
+        });
+      },
+      function(err) {
+        if (DEBUG) console.log('Could not get location for immediate daymode calculation: ' + err.message);
+      },
+      { "timeout": 5000, "maximumAge": 300000 } // Allow cached location up to 5 minutes old for quick response
+    );
   }
 
   // Always refresh weather when settings are saved
@@ -1850,17 +1883,22 @@ function fetchNWSWeather(lat, lon) {
           daymode = (config.ColorScheme == 'WhiteOnBlack') ? 0 : 1;
         }
 
-        // Determine day/night mode from isDaytime flag
-        if (auto_daymode == 1) {
-          daymode = periods[0].isDaytime ? 1 : 0;
-        }
-
         // Calculate sunrise/sunset times using SunCalc
         var sunTimes = SunCalc.getTimes(curr_time, lat, lon);
         sunrise = sunTimes.sunrise;
         sunset = sunTimes.sunset;
         log_message('SunCalc sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
         log_message('SunCalc sunset: ' + sunset.getHours() + ':' + sunset.getMinutes());
+
+        // Determine day/night mode from actual sunrise/sunset times
+        // (Don't use periods[0].isDaytime as that indicates the forecast period type, not current time of day)
+        if (auto_daymode == 1) {
+          if (curr_time >= sunset || curr_time < sunrise) {
+            daymode = 0; // Nighttime
+          } else {
+            daymode = 1; // Daytime
+          }
+        }
 
         // Set the status display on the Pebble to the time of the weather update
         status = 'Upd: ' + timeStr(curr_time);
