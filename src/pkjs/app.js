@@ -7,6 +7,7 @@ var OWM_API_KEY = "106caae1620867404688360dcbd4bb3e";
 
 var Clay = require('./clay');
 var clayConfig = require('./config');
+var SunCalc = require('./suncalc');
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 
 var daymode = 0;
@@ -1854,12 +1855,12 @@ function fetchNWSWeather(lat, lon) {
           daymode = periods[0].isDaytime ? 1 : 0;
         }
 
-        // Extract sunrise/sunset times (NWS doesn't provide these directly)
-        // We'll use approximate times based on isDaytime transitions
-        sunrise = new Date();
-        sunset = new Date();
-        sunrise.setHours(6, 0, 0, 0);
-        sunset.setHours(18, 0, 0, 0);
+        // Calculate sunrise/sunset times using SunCalc
+        var sunTimes = SunCalc.getTimes(curr_time, lat, lon);
+        sunrise = sunTimes.sunrise;
+        sunset = sunTimes.sunset;
+        log_message('SunCalc sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
+        log_message('SunCalc sunset: ' + sunset.getHours() + ':' + sunset.getMinutes());
 
         // Set the status display on the Pebble to the time of the weather update
         status = 'Upd: ' + timeStr(curr_time);
