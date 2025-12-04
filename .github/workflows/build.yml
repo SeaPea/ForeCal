@@ -1,0 +1,55 @@
+name: Build Pebble watchface
+
+on:
+  # Triggers the workflow on push or pull request events for all branches
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set short git commit SHA
+        id: vars
+        run: |
+          calculatedSha=$(git rev-parse --short ${{ github.sha }})
+          echo "COMMIT_SHORT_SHA=$calculatedSha" >> $GITHUB_ENV
+
+      - name: Build with Docker
+        run: make docker-build
+
+      - name: Rename app
+        run: cp build/pebble.pbw forecal-g${{ env.COMMIT_SHORT_SHA }}.pbw
+
+      - name: Generate ELF bundle
+        run: |
+          mkdir elfs
+          cp build/basalt/pebble-app.elf elfs/pebble-app-basalt.elf
+          cp build/diorite/pebble-app.elf elfs/pebble-app-diorite.elf
+          cp build/chalk/pebble-app.elf elfs/pebble-app-chalk.elf
+          cp build/aplite/pebble-app.elf elfs/pebble-app-aplite.elf
+          zip -r elfs.zip elfs
+
+      - name: Upload PBW
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForeCal PBW
+          path: forecal-g${{ env.COMMIT_SHORT_SHA }}.pbw
+          if-no-files-found: error
+
+      - name: Upload ELFs
+        uses: actions/upload-artifact@v4
+        with:
+          name: Debug ELFs
+          path: elfs.zip
