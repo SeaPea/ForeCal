@@ -1,4 +1,4 @@
-const DEBUG = false;
+const DEBUG = true;
 
 // DO NOT REUSE THIS KEY IF FORKING OR COPYING THIS CODE SOMEWHERE ELSE.
 // (This is a free tier key so it doesn't allow for many requests)
@@ -7,6 +7,7 @@ var OWM_API_KEY = "106caae1620867404688360dcbd4bb3e";
 
 var Clay = require('./clay');
 var clayConfig = require('./config');
+var SunCalc = require('./suncalc');
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
 
 var daymode = 0;
@@ -129,6 +130,39 @@ function saveSettings() {
     daymode = 0;
   } else if (config.ColorScheme == 'BlackOnWhite') {
     daymode = 1;
+  } else {
+    // Auto mode - calculate daymode immediately using SunCalc and current location
+    // This prevents the display from defaulting to light mode while waiting for weather refresh
+    navigator.geolocation.getCurrentPosition(
+      function(pos) {
+        var curr_time = new Date();
+        var sunTimes = SunCalc.getTimes(curr_time, pos.coords.latitude, pos.coords.longitude);
+        var sunrise = sunTimes.sunrise;
+        var sunset = sunTimes.sunset;
+
+        if (curr_time >= sunset || curr_time < sunrise) {
+          daymode = 0; // Nighttime
+        } else {
+          daymode = 1; // Daytime
+        }
+
+        if (DEBUG) console.log('Auto daymode calculated immediately: ' + daymode);
+
+        // Send immediate daymode update to watch
+        Pebble.sendAppMessage({
+          "daymode": daymode,
+          "auto_daymode": 1
+        }, function() {
+          if (DEBUG) console.log('Immediate daymode update sent successfully: ' + (daymode ? 'true' : 'false'));
+        }, function(e) {
+          if (DEBUG) console.log('Failed to send immediate daymode update: ' + JSON.stringify(e));
+        });
+      },
+      function(err) {
+        if (DEBUG) console.log('Could not get location for immediate daymode calculation: ' + err.message);
+      },
+      { "timeout": 5000, "maximumAge": 300000 } // Allow cached location up to 5 minutes old for quick response
+    );
   }
 
   // Always refresh weather when settings are saved
@@ -448,13 +482,14 @@ function codeFromNWSIcon(iconUrl, shortForecast) {
   }
 
   // Cloud cover (3, 2, 1) - use icon codes
-  // skc = sky clear, few = few clouds, sct = scattered, bkn = broken, ovc = overcast
-  if (primaryIcon === 'skc' || forecast.includes('clear') || forecast.includes('sunny')) {
+  // skc = sky clear, few = few clouds (0-25%), sct = scattered (25-50%), bkn = broken (50-75%), ovc = overcast (75-100%)
+  if (primaryIcon === 'skc' || primaryIcon === 'few' ||
+      forecast.includes('clear') || forecast.includes('sunny') || forecast.includes('mostly clear')) {
     return 1; // Sunny/Clear
   }
-  if (primaryIcon === 'few' || primaryIcon === 'sct' ||
+  if (primaryIcon === 'sct' ||
       forecast.includes('partly cloudy') || forecast.includes('mostly sunny') ||
-      forecast.includes('partly sunny') || forecast.includes('mostly clear')) {
+      forecast.includes('partly sunny')) {
     return 2; // Partly Cloudy
   }
   if (primaryIcon === 'bkn' || primaryIcon === 'ovc' ||
@@ -1848,17 +1883,22 @@ function fetchNWSWeather(lat, lon) {
           daymode = (config.ColorScheme == 'WhiteOnBlack') ? 0 : 1;
         }
 
-        // Determine day/night mode from isDaytime flag
-        if (auto_daymode == 1) {
-          daymode = periods[0].isDaytime ? 1 : 0;
-        }
+        // Calculate sunrise/sunset times using SunCalc
+        var sunTimes = SunCalc.getTimes(curr_time, lat, lon);
+        sunrise = sunTimes.sunrise;
+        sunset = sunTimes.sunset;
+        log_message('SunCalc sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
+        log_message('SunCalc sunset: ' + sunset.getHours() + ':' + sunset.getMinutes());
 
-        // Extract sunrise/sunset times (NWS doesn't provide these directly)
-        // We'll use approximate times based on isDaytime transitions
-        sunrise = new Date();
-        sunset = new Date();
-        sunrise.setHours(6, 0, 0, 0);
-        sunset.setHours(18, 0, 0, 0);
+        // Determine day/night mode from actual sunrise/sunset times
+        // (Don't use periods[0].isDaytime as that indicates the forecast period type, not current time of day)
+        if (auto_daymode == 1) {
+          if (curr_time >= sunset || curr_time < sunrise) {
+            daymode = 0; // Nighttime
+          } else {
+            daymode = 1; // Daytime
+          }
+        }
 
         // Set the status display on the Pebble to the time of the weather update
         status = 'Upd: ' + timeStr(curr_time);
@@ -1887,17 +1927,19 @@ function fetchNWSWeather(lat, lon) {
               if (period.temperature > today.high || today.high === -999) {
                 today.high = period.temperature;
               }
+
+              // Get the most significant weather condition for today (daytime only)
+              var code = codeFromNWSIcon(period.icon, period.shortForecast);
+              log_message('Period ' + i + ' (' + period.name + '): icon=' + period.icon + ', forecast=' + period.shortForecast + ', code=' + code);
+              if (code > today.code) {
+                today.code = code;
+                today.condition = period.shortForecast;
+                log_message('  -> Updated today.code to ' + code + ', condition: ' + period.shortForecast);
+              }
             } else {
               if (period.temperature < today.low || today.low === 999) {
                 today.low = period.temperature;
               }
-            }
-
-            // Get the most significant weather condition for today
-            var code = codeFromNWSIcon(period.icon, period.shortForecast);
-            if (code > today.code) {
-              today.code = code;
-              today.condition = period.shortForecast;
             }
           } else if (isTomorrow) {
             // Update tomorrow's forecast
@@ -1905,17 +1947,17 @@ function fetchNWSWeather(lat, lon) {
               if (period.temperature > tomorrow.high || tomorrow.high === -999) {
                 tomorrow.high = period.temperature;
               }
+
+              // Get the most significant weather condition for tomorrow (daytime only)
+              var code2 = codeFromNWSIcon(period.icon, period.shortForecast);
+              if (code2 > tomorrow.code) {
+                tomorrow.code = code2;
+                tomorrow.condition = period.shortForecast;
+              }
             } else {
               if (period.temperature < tomorrow.low || tomorrow.low === 999) {
                 tomorrow.low = period.temperature;
               }
-            }
-
-            // Get the most significant weather condition for tomorrow
-            var code2 = codeFromNWSIcon(period.icon, period.shortForecast);
-            if (code2 > tomorrow.code) {
-              tomorrow.code = code2;
-              tomorrow.condition = period.shortForecast;
             }
           }
         }

@@ -763,7 +763,17 @@ static uint16_t quiet_time_duration() {
 // Handle clock change events
 static void handle_tick(struct tm *t, TimeUnits units_changed) {
   if ((units_changed & MINUTE_UNIT) != 0) {
-    clock_copy_time_string(current_time, sizeof(current_time));
+    // Format time manually to avoid platform-specific differences with clock_copy_time_string()
+    // that can cause display issues with SUBSET fonts (e.g., leading spaces on some platforms)
+    if (clock_is_24h_style()) {
+      strftime(current_time, sizeof(current_time), "%H:%M", t);
+    } else {
+      strftime(current_time, sizeof(current_time), "%I:%M", t);
+      // Remove leading zero for 12-hour format (e.g., "09:32" -> "9:32")
+      if (current_time[0] == '0') {
+        memmove(current_time, current_time + 1, sizeof(current_time) - 1);
+      }
+    }
     text_layer_set_text(clock_layer, current_time);
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Current time: %s", current_time);
     
@@ -1333,6 +1343,8 @@ static void window_load(Window *window) {
                      strcmp(s_savedata.forecast_day, show_forecast_tomorrow() ? "Tomorrow" : "Today") != 0);
   
   // Initialize weather data UI
+  // Note: WIND_SPEED_KEY is NOT included in initial_values - it will be sent by JS when weather is fetched
+  // Including it here causes a crash on restart (possibly due to buffer/sync issues)
   Tuplet initial_values[] = {
     MyTupletCString(WEATHER_STATUS_KEY, s_savedata.status),
     MyTupletCString(WEATHER_CURR_TEMP_KEY, s_savedata.curr_temp),
@@ -1342,7 +1354,7 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_ICON_KEY, s_savedata.icon),
     MyTupletCString(WEATHER_CONDITION_KEY, s_savedata.condition),
     TupletInteger(WEATHER_DAYMODE_KEY, s_savedata.daymode ? 1 : 0),
-    TupletCString(WEATHER_CITY_KEY, (need_update ? "Fetching..." : s_savedata.city)), 
+    TupletCString(WEATHER_CITY_KEY, (need_update ? "Fetching..." : s_savedata.city)),
     TupletInteger(WEATHER_SUN_RISE_HOUR_KEY, s_savedata.sun_rise_hour),
     TupletInteger(WEATHER_SUN_RISE_MIN_KEY, s_savedata.sun_rise_min),
     TupletInteger(WEATHER_SUN_SET_HOUR_KEY, s_savedata.sun_set_hour),
@@ -1359,7 +1371,7 @@ static void window_load(Window *window) {
     TupletInteger(LOC_CHANGED_KEY, 0),
     TupletInteger(DATE_FORMAT_KEY, s_savedata.date_format),
     TupletInteger(SHOW_WIND_KEY, s_savedata.show_wind ? 1 : 0),
-    MyTupletCString(WIND_SPEED_KEY, s_savedata.wind_speed),
+    // WIND_SPEED_KEY removed - causes crash on restart
     TupletInteger(FORECAST_HOUR_KEY, s_savedata.forecast_hour),
     TupletInteger(FORECAST_MIN_KEY, s_savedata.forecast_min),
     TupletInteger(QT_START_HOUR_KEY, s_savedata.qt_start_hour),
