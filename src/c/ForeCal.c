@@ -4,7 +4,7 @@
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
-#define SAVE_VER 6
+#define SAVE_VER 7
 #define MAX_RETRIES 3
 #define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
@@ -749,12 +749,16 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         BatteryChargeState batt_state = battery_state_service_peek();
         last_battery_percent = batt_state.charge_percent;
         last_is_charging = batt_state.is_charging;
+        // Update persisted values
+        s_savedata.last_battery_percent = batt_state.charge_percent;
+        s_savedata.last_is_charging = batt_state.is_charging;
         send_battery_to_phone(batt_state.charge_percent, batt_state.is_charging);
       }
       last_request_battery = new_tuple->value->uint8;
       break;
     case ENDPOINT_CONFIGURED_KEY:
       endpoint_configured = (new_tuple->value->uint8 == 1);
+      s_savedata.endpoint_configured = endpoint_configured;  // Persist the value
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Endpoint configured: %s", endpoint_configured ? "true" : "false");
       break;
     case BATTERY_PERCENT_KEY:
@@ -975,6 +979,9 @@ static void handle_batt_update(BatteryChargeState batt_status) {
       batt_status.is_charging != last_is_charging) {
     last_battery_percent = batt_status.charge_percent;
     last_is_charging = batt_status.is_charging;
+    // Update persisted values
+    s_savedata.last_battery_percent = batt_status.charge_percent;
+    s_savedata.last_is_charging = batt_status.is_charging;
     send_battery_to_phone(batt_status.charge_percent, batt_status.is_charging);
   }
 
@@ -1175,24 +1182,35 @@ static void window_load(Window *window) {
   s_savedata.show_week = false;
   s_savedata.show_steps = false;
   s_savedata.weather_update_interval = 60; // Default to 60 minutes
+  s_savedata.last_battery_percent = 0;
+  s_savedata.last_is_charging = false;
+  s_savedata.endpoint_configured = false;
 
   if (persist_exists(SAVE_VER_KEY)) {
     // Handle different save versions for migration
     if (persist_exists(SAVEDATA_KEY)) {
       switch (persist_read_int(SAVE_VER_KEY)) {
         case 4:
-          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.show_week)+sizeof(s_savedata.show_steps)+sizeof(s_savedata.weather_update_interval)));
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.show_week)+sizeof(s_savedata.show_steps)+sizeof(s_savedata.weather_update_interval)+sizeof(s_savedata.last_battery_percent)+sizeof(s_savedata.last_is_charging)+sizeof(s_savedata.endpoint_configured)));
           break;
         case 5:
-          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - sizeof(s_savedata.weather_update_interval));
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.weather_update_interval)+sizeof(s_savedata.last_battery_percent)+sizeof(s_savedata.last_is_charging)+sizeof(s_savedata.endpoint_configured)));
           break;
         case 6:
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.last_battery_percent)+sizeof(s_savedata.last_is_charging)+sizeof(s_savedata.endpoint_configured)));
+          break;
+        case 7:
         default:
           persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
           break;
       }
     }
   }
+
+  // Initialize static variables from persisted data
+  last_battery_percent = s_savedata.last_battery_percent;
+  last_is_charging = s_savedata.last_is_charging;
+  endpoint_configured = s_savedata.endpoint_configured;
   
   GRect bounds = layer_get_bounds(window_layer); 
   
