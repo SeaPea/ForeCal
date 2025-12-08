@@ -165,6 +165,33 @@ function saveSettings() {
     );
   }
 
+  // Send settings to watch immediately (don't wait for weather fetch which may fail)
+  if (DEBUG) console.log('Sending settings to watch');
+  Pebble.sendAppMessage({
+    "first_day": config.FirstDay,
+    "cal_offset": config.CalOffset,
+    "show_bt": config.ShowBT ? 1 : 0,
+    "bt_vibes": config.BTVibes ? 1 : 0,
+    "show_batt": config.ShowBatt ? 1 : 0,
+    "show_week": config.ShowWeek ? 1 : 0,
+    "show_steps": config.ShowSteps ? 1 : 0,
+    "date_format": config.DateFormat,
+    "show_wind": config.ShowWind ? 1 : 0,
+    "forecast_hour": config.ForecastHour,
+    "forecast_min": config.ForecastMin,
+    "qt_start_hour": config.QTStartHour,
+    "qt_start_min": config.QTStartMin,
+    "qt_end_hour": config.QTEndHour,
+    "qt_end_min": config.QTEndMin,
+    "qt_bt_vibes": config.QTVibes ? 1 : 0,
+    "qt_fetch_weather": config.QTFetch ? 1 : 0,
+    "weather_update_interval": config.WeatherUpdateInterval
+  }, function() {
+    if (DEBUG) console.log('Settings sent to watch successfully');
+  }, function(e) {
+    if (DEBUG) console.log('Failed to send settings to watch: ' + JSON.stringify(e));
+  });
+
   // Always refresh weather when settings are saved
   if (DEBUG) console.log('Refreshing weather after saving settings');
 
