@@ -41,7 +41,9 @@ var config = {
   QTVibes: 0,
   QTFetch: 0,
   WeatherProvider: 0,
-  WeatherUpdateInterval: 60
+  WeatherUpdateInterval: 60,
+  RemoteEndpointUrl: '',
+  RemoteEndpointToken: ''
 };
 
 // only call console.log if debug is enabled
@@ -54,6 +56,52 @@ function log_message(msg, extra) {
     }
 
     console.log(`[App] ${msg}`);
+}
+
+// Check if remote endpoint is configured
+function isEndpointConfigured() {
+  return config.RemoteEndpointUrl && config.RemoteEndpointUrl.trim() !== '';
+}
+
+// Send battery data to remote endpoint via HTTP POST with Bearer token
+function sendBatteryToEndpoint(batteryPercent, isCharging) {
+  if (!isEndpointConfigured()) {
+    log_message('Remote endpoint not configured, skipping battery sync');
+    return;
+  }
+
+  log_message('Sending battery data to remote endpoint: ' + batteryPercent + '% (charging: ' + isCharging + ')');
+
+  var req = new XMLHttpRequest();
+  req.open('POST', config.RemoteEndpointUrl, true);
+  req.setRequestHeader('Content-Type', 'application/json');
+
+  // Add Bearer token authorization if provided
+  if (config.RemoteEndpointToken && config.RemoteEndpointToken.trim() !== '') {
+    req.setRequestHeader('Authorization', 'Bearer ' + config.RemoteEndpointToken.trim());
+  }
+
+  req.onload = function() {
+    if (req.readyState === 4) {
+      if (req.status >= 200 && req.status < 300) {
+        log_message('Battery data sent successfully to remote endpoint');
+      } else {
+        log_message('Failed to send battery data to remote endpoint. Status: ' + req.status);
+      }
+    }
+  };
+
+  req.onerror = function() {
+    log_message('Network error sending battery data to remote endpoint');
+  };
+
+  var payload = JSON.stringify({
+    battery_percent: batteryPercent,
+    is_charging: isCharging,
+    timestamp: new Date().toISOString()
+  });
+
+  req.send(payload);
 }
 
 function loadSettings() {
@@ -215,6 +263,29 @@ function saveSettings() {
   lastForecastUpdate = null;
 
   refreshWeather();
+
+  // Send endpoint configuration status to watch and request battery if configured
+  var endpointIsConfigured = isEndpointConfigured();
+  if (DEBUG) console.log('Remote endpoint configured: ' + endpointIsConfigured);
+
+  Pebble.sendAppMessage({
+    "endpoint_configured": endpointIsConfigured ? 1 : 0,
+    "request_battery": endpointIsConfigured ? 1 : 0
+  }, function() {
+    if (DEBUG) console.log('Endpoint config and battery request sent to watch');
+    // Reset request_battery to 0 so future requests can be detected as 0->1 transitions
+    if (endpointIsConfigured) {
+      Pebble.sendAppMessage({
+        "request_battery": 0
+      }, function() {
+        if (DEBUG) console.log('Battery request reset sent to watch');
+      }, function(e) {
+        if (DEBUG) console.log('Failed to reset battery request: ' + JSON.stringify(e));
+      });
+    }
+  }, function(e) {
+    if (DEBUG) console.log('Failed to send endpoint config to watch: ' + JSON.stringify(e));
+  });
 
 }
 
@@ -2098,6 +2169,15 @@ Pebble.addEventListener("appmessage",
                               console.log('Payload Time 24hr: ' + e.payload.time_24hr);
                               console.log('Cfg Time 24hr: ' + time24hr);
                             }
+                          }
+
+                          // Handle battery data from watch
+                          if (e.payload !== undefined && e.payload.battery_percent !== undefined) {
+                            var batteryPercent = e.payload.battery_percent;
+                            var isCharging = e.payload.is_charging === 1;
+                            if (DEBUG) console.log('Received battery data from watch: ' + batteryPercent + '% (charging: ' + isCharging + ')');
+                            sendBatteryToEndpoint(batteryPercent, isCharging);
+                            return; // Don't trigger weather refresh for battery messages
                           }
 
                           // Trigger location and weather fetch on command from Pebble

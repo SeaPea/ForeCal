@@ -279,10 +279,42 @@ module.exports = [
   },
   
   {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Remote Sync"
+      },
+      {
+        "type": "input",
+        "appKey": "RemoteEndpointUrl",
+        "defaultValue": "",
+        "label": "Endpoint URL",
+        "description": "URL for POST requests to sync battery data. Leave blank to disable.",
+        "attributes": {
+          "placeholder": "https://example.com/api/battery",
+          "limit": 256
+        }
+      },
+      {
+        "type": "input",
+        "appKey": "RemoteEndpointToken",
+        "defaultValue": "",
+        "label": "Authorization Token",
+        "description": "Bearer token for authorization (optional)",
+        "attributes": {
+          "placeholder": "your-api-token",
+          "limit": 256
+        }
+      }
+    ]
+  },
+
+  {
     "type": "submit",
     "defaultValue": "Save"
   },
-  
+
   {
     "type": "text",
     "defaultValue": APP_VER

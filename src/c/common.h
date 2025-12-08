@@ -54,4 +54,7 @@ typedef struct savedata {
     bool show_week;
     bool show_steps;
     uint16_t weather_update_interval;
+    uint8_t last_battery_percent;
+    bool last_is_charging;
+    bool endpoint_configured;
  } __attribute__((__packed__)) savedata_t;

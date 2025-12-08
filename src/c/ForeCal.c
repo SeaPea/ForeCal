@@ -4,7 +4,7 @@
 
 #define SAVEDATA_KEY 30
 #define SAVE_VER_KEY 99
-#define SAVE_VER 6
+#define SAVE_VER 7
 #define MAX_RETRIES 3
 #define MAX_RETRIES_HOURLY 5
 #define RETRY_INTERVAL 5000
@@ -76,6 +76,10 @@ static bool bt_connected = false;
 static batt_level_t last_batt_level = BATT_NA;
 static time_t last_update_attempt;
 static bool qt_delay = false;
+static bool endpoint_configured = false;
+static uint8_t last_battery_percent = 0;
+static bool last_is_charging = false;
+static uint8_t last_request_battery = 0;  // Track last request_battery value to detect transitions
 #if (defined(PBL_HEALTH) && defined(PBL_COLOR))
 static Layer *steps_layer = NULL;
 static bool steps_on = false;
@@ -122,6 +126,10 @@ enum MessageKey {
   SHOW_WEEK_KEY = 34,
   SHOW_STEPS_KEY = 35,
   WEATHER_UPDATE_INTERVAL_KEY = 36,
+  REQUEST_BATTERY_KEY = 37,
+  BATTERY_PERCENT_KEY = 38,
+  ENDPOINT_CONFIGURED_KEY = 39,
+  IS_CHARGING_KEY = 40,
   WEATHER_FETCHED_KEY = 99
 };
 
@@ -168,6 +176,24 @@ static void update_weather(void) {
   };
   
   app_sync_set(&sync, values, 1);
+}
+
+// Procedure that sends battery percentage and charging status to the phone for remote sync
+static void send_battery_to_phone(uint8_t battery_percent, bool is_charging) {
+  if (!endpoint_configured) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Endpoint not configured, skipping battery sync");
+    return;
+  }
+
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Sending battery to phone: %d%% (charging: %s)",
+          battery_percent, is_charging ? "yes" : "no");
+
+  Tuplet values[] = {
+    TupletInteger(BATTERY_PERCENT_KEY, battery_percent),
+    TupletInteger(IS_CHARGING_KEY, is_charging ? 1 : 0)
+  };
+
+  app_sync_set(&sync, values, 2);
 }
 
 // Timer event that fires after the app sync init to differentiate between
@@ -703,7 +729,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         retry_count = 0;
         if (retry_timer != NULL) app_timer_cancel(retry_timer);
         last_error = false;
-        
+
         // Record the time of the successful update as the time when the update started
         if (last_update_attempt == 0) {
           // If there is no update start time, use now (without seconds)
@@ -713,6 +739,31 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
         s_savedata.last_update = last_update_attempt;
       }
       last_update_attempt = 0;
+      break;
+    case REQUEST_BATTERY_KEY:
+      // Only respond when value transitions from 0 to 1 (new request)
+      // This prevents infinite loops since AppSync callback fires for all tuples on every sync
+      if (new_tuple->value->uint8 == 1 && last_request_battery == 0) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Battery request received from phone");
+        // Phone is requesting current battery data - get fresh value
+        BatteryChargeState batt_state = battery_state_service_peek();
+        last_battery_percent = batt_state.charge_percent;
+        last_is_charging = batt_state.is_charging;
+        // Update persisted values
+        s_savedata.last_battery_percent = batt_state.charge_percent;
+        s_savedata.last_is_charging = batt_state.is_charging;
+        send_battery_to_phone(batt_state.charge_percent, batt_state.is_charging);
+      }
+      last_request_battery = new_tuple->value->uint8;
+      break;
+    case ENDPOINT_CONFIGURED_KEY:
+      endpoint_configured = (new_tuple->value->uint8 == 1);
+      s_savedata.endpoint_configured = endpoint_configured;  // Persist the value
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Endpoint configured: %s", endpoint_configured ? "true" : "false");
+      break;
+    case BATTERY_PERCENT_KEY:
+    case IS_CHARGING_KEY:
+      // These keys are for watch->phone communication, ignore if received from phone
       break;
     default:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Unknown App Message Key: %d", (int)key);
@@ -903,11 +954,11 @@ static void handle_bt_update(bool connected) {
 
 // Handle battery status updates
 static void handle_batt_update(BatteryChargeState batt_status) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Battery Update: %d%% (%s)", batt_status.charge_percent, 
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Battery Update: %d%% (%s)", batt_status.charge_percent,
           batt_status.is_charging ? "Charging" : "NOT Charging");
-  
+
   batt_level_t new_batt_level;
-  
+
   if (batt_status.is_charging) {
     new_batt_level = BATT_CHARGING;
   }
@@ -922,13 +973,24 @@ static void handle_batt_update(BatteryChargeState batt_status) {
       new_batt_level = BATT_25;
     }
   }
-  
+
+  // Send battery data to phone if percentage or charging state changed
+  if (batt_status.charge_percent != last_battery_percent ||
+      batt_status.is_charging != last_is_charging) {
+    last_battery_percent = batt_status.charge_percent;
+    last_is_charging = batt_status.is_charging;
+    // Update persisted values
+    s_savedata.last_battery_percent = batt_status.charge_percent;
+    s_savedata.last_is_charging = batt_status.is_charging;
+    send_battery_to_phone(batt_status.charge_percent, batt_status.is_charging);
+  }
+
   if (new_batt_level != last_batt_level) {
     if (batt_icon) {
       gbitmap_destroy(batt_icon);
       batt_icon = NULL;
     }
-    
+
     switch (new_batt_level) {
       case BATT_CHARGING:
         batt_icon = gbitmap_create_with_resource(RESOURCE_ID_IMAGE_BATT_CHARGE);
@@ -948,7 +1010,7 @@ static void handle_batt_update(BatteryChargeState batt_status) {
       case BATT_NA:
         batt_icon = NULL;
     }
-    
+
     bitmap_layer_set_bitmap(batt_layer, batt_icon);
     layer_mark_dirty(bitmap_layer_get_layer(batt_layer));
     last_batt_level = new_batt_level;
@@ -1120,24 +1182,35 @@ static void window_load(Window *window) {
   s_savedata.show_week = false;
   s_savedata.show_steps = false;
   s_savedata.weather_update_interval = 60; // Default to 60 minutes
+  s_savedata.last_battery_percent = 0;
+  s_savedata.last_is_charging = false;
+  s_savedata.endpoint_configured = false;
 
   if (persist_exists(SAVE_VER_KEY)) {
     // Handle different save versions for migration
     if (persist_exists(SAVEDATA_KEY)) {
       switch (persist_read_int(SAVE_VER_KEY)) {
         case 4:
-          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.show_week)+sizeof(s_savedata.show_steps)+sizeof(s_savedata.weather_update_interval)));
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.show_week)+sizeof(s_savedata.show_steps)+sizeof(s_savedata.weather_update_interval)+sizeof(s_savedata.last_battery_percent)+sizeof(s_savedata.last_is_charging)+sizeof(s_savedata.endpoint_configured)));
           break;
         case 5:
-          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - sizeof(s_savedata.weather_update_interval));
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.weather_update_interval)+sizeof(s_savedata.last_battery_percent)+sizeof(s_savedata.last_is_charging)+sizeof(s_savedata.endpoint_configured)));
           break;
         case 6:
+          persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata) - (sizeof(s_savedata.last_battery_percent)+sizeof(s_savedata.last_is_charging)+sizeof(s_savedata.endpoint_configured)));
+          break;
+        case 7:
         default:
           persist_read_data(SAVEDATA_KEY, &s_savedata, sizeof(s_savedata));
           break;
       }
     }
   }
+
+  // Initialize static variables from persisted data
+  last_battery_percent = s_savedata.last_battery_percent;
+  last_is_charging = s_savedata.last_is_charging;
+  endpoint_configured = s_savedata.endpoint_configured;
   
   GRect bounds = layer_get_bounds(window_layer); 
   
@@ -1381,7 +1454,11 @@ static void window_load(Window *window) {
     TupletInteger(QT_BT_VIBES_KEY, s_savedata.qt_bt_vibes),
     TupletInteger(QT_FETCH_WEATHER_KEY, s_savedata.qt_fetch_weather),
     TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, s_savedata.weather_update_interval),
-    TupletInteger(WEATHER_FETCHED_KEY, 0)
+    TupletInteger(WEATHER_FETCHED_KEY, 0),
+    TupletInteger(REQUEST_BATTERY_KEY, 0),
+    TupletInteger(BATTERY_PERCENT_KEY, 0),
+    TupletInteger(ENDPOINT_CONFIGURED_KEY, 0),
+    TupletInteger(IS_CHARGING_KEY, 0)
   };
   
   // Initialize comms with phone
