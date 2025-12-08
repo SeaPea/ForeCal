@@ -48,7 +48,11 @@
             "time_24hr": 20,
             "weather_fetched": 99,
             "weather_update_interval": 36,
-            "wind_speed": 25
+            "wind_speed": 25,
+            "request_battery": 37,
+            "battery_percent": 38,
+            "endpoint_configured": 39,
+            "is_charging": 40
         },
         "projectType": "native",
         "resources": {
