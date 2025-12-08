@@ -389,78 +389,88 @@ function codeFromOWMId(weatherId) {
   }
 }
 
-// Convert/Reduce Yahoo weather codes to our weather codes for icons
-function codeFromYiD(weatherId) {
-  switch (weatherId) {
-    case '31': //clear (night)
-    case '32': //sunny
-    case '33': //fair (night)
-    case '34': //fair (day)
-      return 1; //Sunny
-    case '29': //partly cloudy (night)
-    case '30': //partly cloudy (day)
-    case '44': //partly cloudy
-      return 2; //Partly Cloudy
-    case '26': //cloudy
-    case '27': //mostly cloudy (night)
-    case '28': //mostly cloudy (day)
-      return 3; //Cloudy
-    case '25': //cold
-      return 4; //Cold
-    case '36': //hot
-      return 5; //Hot
-    case '23': //blustery
-    case '24': //windy
-      return 6; //Windy
-    case '19': //dust
-    case '20': //foggy
-    case '21': //haze
-    case '22': //smoky
-      return 7; //Low Visility
-    case '9':  //drizzle
-      return 8; //Drizzle
-    case '11': //showers
-    case '12': //showers
-    case '40': //scattered showers
-      return 9; //Rain
-    case '5':  //mixed rain and snow
-    case '6':  //mixed rain and sleet
-    case '7':  //mixed snow and sleet
-      return 10; //Mixed Snow
-    case '13': //snow flurries
-    case '14': //light snow showers
-    case '42': //scattered snow showers
-      return 11; //Light Snow
-    case '8':  //freezing drizzle
-    case '10': //freezing rain
-    case '17': //hail
-    case '35': //mixed rain and hail
-      return 12; //Hail
-    case '15': //blowing snow
-    case '16': //snow
-    case '18': //sleet
-    case '41': //heavy snow
-    case '43': //heavy snow
-    case '46': //snow showers
-      return 13; //Snow
-    case '45': //thundershowers
-    case '47': //isolated thundershowers
-      return 14; // Thundershowers
-    case '4':  //thunderstorms
-    case '37': //isolated thunderstorms
-      return 15; //Isolated Thunderstorms
-    case '3':  //severe thunderstorms
-    case '38': //scattered thunderstorms
-    case '39': //scattered thunderstorms
-      return 16; //Scattered Thunderstorms
-    case '1':  //tropical storm
-      return 17; //Storm
-    case '0':  //tornado
-      return 18; //Tornado
-    case '2':  //hurricane
-      return 19; //Hurricane
+// Convert/Reduce Open-Meteo WMO weather codes to our weather codes for icons
+// WMO Weather interpretation codes (WW): https://open-meteo.com/en/docs
+function codeFromOpenMeteoWMO(wmoCode) {
+  switch (wmoCode) {
+    case 0:  // Clear sky
+      return 1; // Sunny
+    case 1:  // Mainly clear
+    case 2:  // Partly cloudy
+      return 2; // Partly Cloudy
+    case 3:  // Overcast
+      return 3; // Cloudy
+    case 45: // Fog
+    case 48: // Depositing rime fog
+      return 7; // Low Visibility
+    case 51: // Drizzle: Light
+    case 53: // Drizzle: Moderate
+    case 55: // Drizzle: Dense
+    case 56: // Freezing Drizzle: Light
+    case 57: // Freezing Drizzle: Dense
+      return 8; // Drizzle
+    case 61: // Rain: Slight
+    case 80: // Rain showers: Slight
+      return 9; // Rain
+    case 63: // Rain: Moderate
+    case 81: // Rain showers: Moderate
+      return 9; // Rain
+    case 65: // Rain: Heavy
+    case 82: // Rain showers: Violent
+      return 9; // Rain
+    case 66: // Freezing Rain: Light
+    case 67: // Freezing Rain: Heavy
+      return 12; // Hail
+    case 71: // Snow fall: Slight
+    case 77: // Snow grains
+    case 85: // Snow showers: Slight
+      return 11; // Light Snow
+    case 73: // Snow fall: Moderate
+    case 75: // Snow fall: Heavy
+    case 86: // Snow showers: Heavy
+      return 13; // Snow
+    case 95: // Thunderstorm: Slight or moderate
+      return 15; // Isolated Thunderstorms
+    case 96: // Thunderstorm with slight hail
+    case 99: // Thunderstorm with heavy hail
+      return 16; // Scattered Thunderstorms
     default:
       return 0; // N/A
+  }
+}
+
+// Get condition text from Open-Meteo WMO weather code
+function conditionFromOpenMeteoWMO(wmoCode) {
+  switch (wmoCode) {
+    case 0: return "Clear sky";
+    case 1: return "Mainly clear";
+    case 2: return "Partly cloudy";
+    case 3: return "Overcast";
+    case 45: return "Fog";
+    case 48: return "Rime fog";
+    case 51: return "Light drizzle";
+    case 53: return "Drizzle";
+    case 55: return "Dense drizzle";
+    case 56: return "Freezing drizzle";
+    case 57: return "Dense freezing drizzle";
+    case 61: return "Slight rain";
+    case 63: return "Rain";
+    case 65: return "Heavy rain";
+    case 66: return "Light freezing rain";
+    case 67: return "Heavy freezing rain";
+    case 71: return "Slight snow";
+    case 73: return "Snow";
+    case 75: return "Heavy snow";
+    case 77: return "Snow grains";
+    case 80: return "Slight rain showers";
+    case 81: return "Rain showers";
+    case 82: return "Violent rain showers";
+    case 85: return "Slight snow showers";
+    case 86: return "Heavy snow showers";
+    case 95: return "Thunderstorm";
+    case 96: return "Thunderstorm with hail";
+    case 99: return "Thunderstorm with heavy hail";
+    default: return "Unknown";
   }
 }
 
@@ -704,9 +714,9 @@ function conditionTimes2Text(times) {
 function formatTempK(kelvin) {
   try {
     if (lastUnits == 'metric')
-      return Math.round(kelvin < 150 ? kelvin : kelvin - 273.15) + '\u00B0' + 'C';
+      return Math.round(kelvin < 150 ? kelvin : kelvin - 273.15) + 'C';
     else if (lastUnits == 'imperial')
-      return Math.round(kelvin < 150 ? kelvin : (((kelvin * 9) / 5) - 459.67)) + '\u00B0' + 'F';
+      return Math.round(kelvin < 150 ? kelvin : (((kelvin * 9) / 5) - 459.67)) + 'F';
     else
       return 'N/A';
   } catch(ex) {
@@ -720,9 +730,9 @@ function formatTempF(f) {
   try {
     if (f) {
       if (lastUnits == 'metric')
-        return Math.round((f - 32) * 5 / 9.0) + '\u00B0' + 'C';
+        return Math.round((f - 32) * 5 / 9.0) + 'C';
       else if (lastUnits == 'imperial')
-        return Math.round(f) + '\u00B0' + 'F';
+        return Math.round(f) + 'F';
       else
         return 'N/A';
     } else
@@ -776,9 +786,9 @@ function locationSuccess(pos) {
     // Use selected provider normally
     log_message('Using selected weather provider (NWS preference disabled)');
     if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
-      fetchOWMWeather("lat=" + coordinates.latitude + "&lon=" + coordinates.longitude);
+      fetchOpenMeteoWeather(coordinates.latitude, coordinates.longitude);
     } else {
-      fetchYWeather("(" + coordinates.latitude + "," + coordinates.longitude + ")");
+      fetchOWMWeather("lat=" + coordinates.latitude + "&lon=" + coordinates.longitude);
     }
   }
 }
@@ -831,11 +841,11 @@ function fallbackToSelectedProvider(lat, lon) {
   log_message('Falling back to selected provider with coordinates: ' + lat + ', ' + lon);
 
   if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
+    log_message('Using Open-Meteo as fallback');
+    fetchOpenMeteoWeather(lat, lon);
+  } else {
     log_message('Using OpenWeatherMap as fallback');
     fetchOWMWeather("lat=" + lat + "&lon=" + lon);
-  } else {
-    log_message('Using Yahoo as fallback');
-    fetchYWeather("(" + lat + "," + lon + ")");
   }
 }
 
@@ -929,9 +939,9 @@ function refreshWeather() {
             log_message('Location is outside USA (country: ' + country_code + ') - falling back to selected provider');
             // Fall back to selected provider using geocoded coordinates
             if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
-              fetchOWMWeather("lat=" + lat + "&lon=" + lon);
+              fetchOpenMeteoWeather(lat, lon);
             } else {
-              fetchYWeather("(" + lat + "," + lon + ")");
+              fetchOWMWeather("lat=" + lat + "&lon=" + lon);
             }
           }
         },
@@ -948,9 +958,22 @@ function refreshWeather() {
       // NWS preference disabled - use selected provider normally
       log_message('Using selected weather provider (NWS preference disabled)');
       if (typeof config.WeatherProvider !== "undefined" && config.WeatherProvider == 1) {
-        fetchOWMWeather("q=" + encodeURIComponent(config.WeatherLoc));
+        // Open-Meteo requires coordinates, so geocode the location first
+        geocodeLocation(
+          config.WeatherLoc,
+          function(lat, lon, country_code) {
+            fetchOpenMeteoWeather(lat, lon);
+          },
+          function(error) {
+            log_message('Geocoding failed for Open-Meteo: ' + error);
+            Pebble.sendAppMessage({
+              "city":"Geocode Error",
+              "weather_fetched":0
+            });
+          }
+        );
       } else {
-        fetchYWeather(encodeURIComponent(config.WeatherLoc));
+        fetchOWMWeather("q=" + encodeURIComponent(config.WeatherLoc));
       }
     }
   } else {
@@ -959,244 +982,6 @@ function refreshWeather() {
     navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
   }
 
-}
-
-function fetchYWeather(loc) {
-
-  if (DEBUG) console.log("### FETCHING YAHOO WEATHER ###");
-  if (DEBUG) console.log('Using query string: ' + loc);
-
-  var curr_time = new Date();
-
-  var country, region, city, status, units;
-  var curr_temp, sunrise, sunset;
-  var forecast_day, forecast_date;
-  var auto_daymode, windspeed;
-  var today, tomorrow, forecast;
-  var stationId, locChanged;
-
-  if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour ||
-                                    (curr_time.getHours() == config.ForecastHour &&
-                                     curr_time.getMinutes() >= config.ForecastMin))) {
-    // Between set time and Midnight, show tomorrow's forecast
-    forecast_day = 'Tomorrow';
-    forecast_date = addDays(new Date(), 1);
-    forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
-  } else {
-    // At all other times, show today's forecast
-    forecast_day = 'Today';
-    forecast_date = new Date();
-    if (lastUpdate && lastUpdate.getDate() != curr_time.getDate())
-      // If last update and current time are different days, we just crossed over midnight so show tomorrow forecast, but call it 'today'
-      // to save all users trying to update at midnight and causing requests to hit limit
-      forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
-    else
-      forecast = JSON.parse(localStorage.getItem('forecastToday'));
-  }
-
-  var reqWeather = new XMLHttpRequest();
-
-  reqWeather.onload = function(e) {
-    if (reqWeather.readyState == 4) {
-      if (reqWeather.status == 200) {
-        // Successfully retrieved weather data
-
-        var d, d2;
-
-        try {
-          // Parse weather data JSON
-          d2 = JSON.parse(reqWeather.responseText);
-        } catch(ex) {
-          Pebble.sendAppMessage({
-            "city":"Err: Bad Data", // Show error briefly
-            "weather_fetched":0});
-          return;
-        }
-
-        // Validate data
-        if (d2.error && d.error.description) {
-          console.warn("Yahoo Weather Error: " + d.error.description);
-          Pebble.sendAppMessage({
-            "city":"Y Err: " + (d.error.description.length > 8 ? d.error.description.substr(0, 8) : d.error.description), // Show error briefly
-            "weather_fetched":0});
-          return;
-        } else if (!d2.query) {
-          Pebble.sendAppMessage({
-            "city":"Err: Unknown Data", // Show error briefly
-            "weather_fetched":0});
-          return;
-        } else if (!d2.query.results) {
-          Pebble.sendAppMessage({
-            "city":"Loc. Not Found", // Show error briefly
-            "weather_fetched":0});
-          return;
-        }
-
-        d = d2.query.results.channel;
-
-        country = d[0].location.country;
-        region = d[0].location.region;
-        city = d[0].location.city;
-
-        if (!config.TempUnit || config.TempUnit === '' || config.TempUnit === 'Auto') {
-          // Determine temperature and wind-speed units from country code
-          // (US gets F and mph, everyone else gets C and m/s)
-          if (country == 'United States')
-            units = 'imperial';
-          else
-            units = 'metric';
-        } else {
-          if (config.TempUnit == 'F')
-            units = 'imperial';
-          else
-            units = 'metric';
-        }
-
-        lastUnits = units;
-        localStorage.setItem('lastUnits', lastUnits);
-
-        stationId = region + city;
-        locChanged = (stationId == lastStationId ? 0 : 1);
-        lastStationId = stationId;
-        localStorage.setItem("lastStationId", stationId);
-        localStorage.setItem("lastCity", city);
-
-        // Get current condtion
-        curr_temp = d[0].item.condition.temp;
-        windspeed = d[0].wind.speed;
-
-        daymode = 0;
-
-        if (!config.ColorScheme || config.ColorScheme === '' || config.ColorScheme == 'Auto') {
-          auto_daymode = 1;
-        }
-        else {
-          auto_daymode = 0;
-          daymode = (config.ColorScheme == 'WhiteOnBlack') ? 0 : 1;
-        }
-
-        if (d[0].astronomy) {
-          sunrise = timeStrToDate(d[0].astronomy.sunrise);
-          sunset = timeStrToDate(d[0].astronomy.sunset);
-
-          if (auto_daymode == 1) {
-            if (!isNaN(sunrise) && !isNaN(sunset)) {
-              // Calculate if the current time is between the sunrise and sunset
-              if (curr_time >= sunset || curr_time < sunrise) {
-                // Nighttime
-                daymode = 0;
-              } else {
-                // Daytime
-                daymode = 1;
-              }
-            }
-          }
-        }
-
-        // Set the status display on the Pebble to the time of the weather update
-        status = 'Upd: ' + timeStr(curr_time);
-
-        localStorage.setItem('lastForecastUpdate', curr_time.toISOString());
-
-        today = { high: d[0].item.forecast.high, low: d[0].item.forecast.low, code: codeFromYiD(d[0].item.forecast.code), condition: d[0].item.forecast.text };
-        tomorrow = { high: d[1].item.forecast.high, low: d[1].item.forecast.low, code: codeFromYiD(d[1].item.forecast.code), condition: d[1].item.forecast.text };
-
-        lastUpdate = new Date(curr_time);
-        localStorage.setItem('lastUpdate', curr_time.toISOString());
-        localStorage.setItem("forecastToday", JSON.stringify(today));
-        localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
-
-        if (forecast_date.getDate() == curr_time.getDate())
-          forecast = today;
-        else
-          forecast = tomorrow;
-
-        if (DEBUG) {
-          console.log('Current Temp: ' + formatTempF(curr_temp));
-          console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
-          console.log('Sunrise: ' + sunset.getHours() + ':' + sunset.getMinutes());
-          console.log('Forecast Day: ' + forecast_day);
-          console.log('Forecast Date: ' + forecast_date);
-          console.log('Low: ' + formatTempF(forecast.low));
-          console.log('High: ' + formatTempF(forecast.high));
-          console.log('Condition: ' + forecast.condition);
-          console.log('Icon: ' + forecast.code);
-          console.log('Daymode: ' + daymode);
-          console.log('Auto Daymode: ' + auto_daymode);
-          console.log('First Day: ' + config.FirstDay);
-          console.log('Calendar Offset: ' + config.CalOffset);
-          console.log('Show BT: ' + config.ShowBT);
-          console.log('BT Vibes: ' + config.BTVibes);
-          console.log('Show Battery: ' + config.ShowBatt);
-          console.log('Show Week: ' + config.ShowWeek);
-          console.log('Show Steps: ' + config.ShowSteps);
-          console.log('Location Changed: ' + locChanged);
-          console.log('Wind Speed: ' + formatSpeedmph(windspeed));
-          console.log('Forecast time: ' + config.ForecastHour + ':' + config.ForecastMin);
-          console.log('Quiet Time Start: ' + config.QTStartHour + ':' + config.QTStartMin);
-          console.log('Quiet Time End: ' + config.QTEndHour + ':' + config.QTEndMin);
-          console.log('Quite Time BT Vibes: ' + config.QTVibes);
-          console.log('Quiet Time Fetch Weather: ' + config.QTFetch);
-        }
-
-        // Send the data to the Pebble
-        Pebble.sendAppMessage({
-            "status":status,
-            "curr_temp":formatTempF(curr_temp),
-            "forecast_day":forecast_day,
-            "high_temp":formatTempF(forecast.high),
-            "low_temp":formatTempF(forecast.low),
-            "icon":forecast.code,
-            "condition":forecast.condition,
-            "daymode":daymode,
-            "city":city,
-            "sun_rise_hour":sunrise.getHours(),
-            "sun_rise_min":sunrise.getMinutes(),
-            "sun_set_hour":sunset.getHours(),
-            "sun_set_min":sunset.getMinutes(),
-            "auto_daymode":auto_daymode,
-            "first_day":config.FirstDay,
-            "cal_offset":config.CalOffset,
-            "show_bt":config.ShowBT,
-            "bt_vibes":config.BTVibes,
-            "show_batt":config.ShowBatt,
-            "show_week":config.ShowWeek,
-            "show_steps":config.ShowSteps,
-            "loc_changed":locChanged,
-            "date_format":config.DateFormat,
-            "show_wind":config.ShowWind,
-            "wind_speed":formatSpeedmph(windspeed),
-            "forecast_hour":config.ForecastHour,
-            "forecast_min":config.ForecastMin,
-            "qt_start_hour":config.QTStartHour,
-            "qt_start_min":config.QTStartMin,
-            "qt_end_hour":config.QTEndHour,
-            "qt_end_min":config.QTEndMin,
-            "qt_bt_vibes":config.QTVibes,
-            "qt_fetch_weather":config.QTFetch,
-            "weather_update_interval":config.WeatherUpdateInterval,
-            "weather_fetched":1});
-
-      } else {
-        console.warn("Yahoo HTTP Error: " + reqWeather.status);
-
-        Pebble.sendAppMessage({
-          "city":"HTTP Err: " + reqWeather.status, // Show error briefly
-          "weather_fetched":0});
-      }
-    }
-  };
-
-  if (DEBUG) {
-    console.log('Last update: ' + lastUpdate);
-    console.log('Forecast data: ' + JSON.stringify(forecast));
-    console.log('Mins since last update: ' + ((curr_time - lastUpdate) / 60000));
-  }
-
-  // Always fetch fresh weather data when requested
-  // Initiate HTTP request for curent weather data from YAHOO!
-  reqWeather.open('GET', "https://query.yahooapis.com/v1/public/yql?q=select%20location,%20wind,%20astronomy,%20item.condition,item.forecast%20from%20weather.forecast%20where%20woeid%20IN%20(select%20locality1.woeid%20from%20geo.places(0,1)%20where%20text%3D%27" + loc.replace("'", "%27%27") + "%27)%20and%20u%3D%27f%27%20%7C%20truncate(count%3D2)&format=json", true);
-  reqWeather.send(null);
 }
 
 // Fetch the weather data from the OpenWeatherMap web service and transmit to Pebble
@@ -1683,6 +1468,242 @@ function fetchOWMWeather(loc) {
   // Initiate HTTP request for curent weather data
   reqCurrent.open('GET', 'http://api.openweathermap.org/data/2.5/weather?' + loc + '&appid=' + OWM_API_KEY, true);
   reqCurrent.send(null);
+}
+
+// Fetch the weather data from the Open-Meteo web service and transmit to Pebble
+// Open-Meteo is a free, open-source weather API that doesn't require an API key
+function fetchOpenMeteoWeather(lat, lon) {
+
+  if (DEBUG) console.log("### FETCHING OPEN-METEO WEATHER ###");
+  if (DEBUG) console.log('Using coordinates: ' + lat + ', ' + lon);
+
+  var curr_time = new Date();
+
+  var city, status, units;
+  var curr_temp, sunrise, sunset, locChanged = 0, stationId = 0;
+  var forecast_day, forecast_date, high, low, icon, condition;
+  var auto_daymode, windspeed;
+  var today, tomorrow, forecast;
+
+  if (config.ForecastHour !== 0 && (curr_time.getHours() > config.ForecastHour ||
+                                    (curr_time.getHours() == config.ForecastHour &&
+                                     curr_time.getMinutes() >= config.ForecastMin))) {
+    forecast_day = 'Tomorrow';
+    forecast_date = addDays(new Date(), 1);
+    forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
+  } else {
+    forecast_day = 'Today';
+    forecast_date = new Date();
+    if (lastUpdate && lastUpdate.getDate() != curr_time.getDate())
+      forecast = JSON.parse(localStorage.getItem('forecastTomorrow'));
+    else
+      forecast = JSON.parse(localStorage.getItem('forecastToday'));
+  }
+
+  var reqWeather = new XMLHttpRequest();
+
+  reqWeather.onload = function(e) {
+    if (reqWeather.readyState == 4) {
+      if (reqWeather.status == 200) {
+        var d;
+
+        try {
+          d = JSON.parse(reqWeather.responseText);
+        } catch(ex) {
+          log_message('Open-Meteo parse error: ' + ex);
+          Pebble.sendAppMessage({
+            "city":"Err: Bad Data",
+            "weather_fetched":0});
+          return;
+        }
+
+        if (d.error) {
+          log_message('Open-Meteo API error: ' + (d.reason || 'Unknown'));
+          Pebble.sendAppMessage({
+            "city":"API Error",
+            "weather_fetched":0});
+          return;
+        }
+
+        if (!d.current || !d.daily) {
+          log_message('Open-Meteo missing data');
+          Pebble.sendAppMessage({
+            "city":"Err: Missing Data",
+            "weather_fetched":0});
+          return;
+        }
+
+        // Get city name from reverse geocoding cache or use coordinates
+        city = localStorage.getItem("lastCity") || (lat.toFixed(2) + "," + lon.toFixed(2));
+
+        // Determine units
+        if (!config.TempUnit || config.TempUnit === '' || config.TempUnit === 'Auto') {
+          units = lastUnits || 'metric';
+        } else {
+          units = (config.TempUnit == 'F') ? 'imperial' : 'metric';
+        }
+
+        lastUnits = units;
+        localStorage.setItem('lastUnits', lastUnits);
+
+        // Use coordinates as station ID
+        stationId = lat.toFixed(4) + ',' + lon.toFixed(4);
+        locChanged = (stationId == lastStationId ? 0 : 1);
+        lastStationId = stationId;
+        localStorage.setItem("lastStationId", stationId);
+
+        // Get current conditions (temperature is in Celsius from API)
+        curr_temp = d.current.temperature_2m;
+        windspeed = d.current.wind_speed_10m; // in km/h from API
+
+        daymode = 0;
+
+        if (!config.ColorScheme || config.ColorScheme === '' || config.ColorScheme == 'Auto') {
+          auto_daymode = 1;
+        } else {
+          auto_daymode = 0;
+          daymode = (config.ColorScheme == 'WhiteOnBlack') ? 0 : 1;
+        }
+
+        // Parse sunrise/sunset from daily data
+        if (d.daily.sunrise && d.daily.sunrise[0] && d.daily.sunset && d.daily.sunset[0]) {
+          sunrise = new Date(d.daily.sunrise[0]);
+          sunset = new Date(d.daily.sunset[0]);
+
+          if (auto_daymode == 1) {
+            if (!isNaN(sunrise) && !isNaN(sunset)) {
+              if (curr_time >= sunset || curr_time < sunrise) {
+                daymode = 0; // Nighttime
+              } else {
+                daymode = 1; // Daytime
+              }
+            }
+          }
+        } else {
+          // Default sunrise/sunset if not available
+          sunrise = new Date(curr_time);
+          sunrise.setHours(6, 0, 0, 0);
+          sunset = new Date(curr_time);
+          sunset.setHours(18, 0, 0, 0);
+        }
+
+        status = 'Upd: ' + timeStr(curr_time);
+
+        // Get today's and tomorrow's forecast from daily data
+        var todayCode = d.daily.weather_code ? d.daily.weather_code[0] : 0;
+        var tomorrowCode = d.daily.weather_code ? d.daily.weather_code[1] : 0;
+
+        // Temperatures from API are in Celsius, convert to Kelvin for formatTempK
+        var todayHigh = d.daily.temperature_2m_max ? (d.daily.temperature_2m_max[0] + 273.15) : (curr_temp + 273.15);
+        var todayLow = d.daily.temperature_2m_min ? (d.daily.temperature_2m_min[0] + 273.15) : (curr_temp + 273.15);
+        var tomorrowHigh = d.daily.temperature_2m_max ? (d.daily.temperature_2m_max[1] + 273.15) : todayHigh;
+        var tomorrowLow = d.daily.temperature_2m_min ? (d.daily.temperature_2m_min[1] + 273.15) : todayLow;
+
+        today = {
+          high: todayHigh,
+          low: todayLow,
+          code: codeFromOpenMeteoWMO(todayCode),
+          condition: conditionFromOpenMeteoWMO(todayCode)
+        };
+
+        tomorrow = {
+          high: tomorrowHigh,
+          low: tomorrowLow,
+          code: codeFromOpenMeteoWMO(tomorrowCode),
+          condition: conditionFromOpenMeteoWMO(tomorrowCode)
+        };
+
+        lastUpdate = new Date(curr_time);
+        localStorage.setItem('lastUpdate', curr_time.toISOString());
+        localStorage.setItem('lastForecastUpdate', curr_time.toISOString());
+        localStorage.setItem("forecastToday", JSON.stringify(today));
+        localStorage.setItem("forecastTomorrow", JSON.stringify(tomorrow));
+
+        if (forecast_date.getDate() == curr_time.getDate())
+          forecast = today;
+        else
+          forecast = tomorrow;
+
+        // Convert current temp to Kelvin for formatTempK
+        var curr_temp_k = curr_temp + 273.15;
+        // Convert wind speed from km/h to m/s for formatSpeedms
+        var windspeed_ms = windspeed / 3.6;
+
+        if (DEBUG) {
+          console.log('Current Temp: ' + formatTempK(curr_temp_k));
+          console.log('Sunrise: ' + sunrise.getHours() + ':' + sunrise.getMinutes());
+          console.log('Sunset: ' + sunset.getHours() + ':' + sunset.getMinutes());
+          console.log('Forecast Day: ' + forecast_day);
+          console.log('Low: ' + formatTempK(forecast.low));
+          console.log('High: ' + formatTempK(forecast.high));
+          console.log('Condition: ' + forecast.condition);
+          console.log('Icon: ' + forecast.code);
+          console.log('Daymode: ' + daymode);
+        }
+
+        Pebble.sendAppMessage({
+            "status":status,
+            "curr_temp":formatTempK(curr_temp_k),
+            "forecast_day":forecast_day,
+            "high_temp":formatTempK(forecast.high),
+            "low_temp":formatTempK(forecast.low),
+            "icon":forecast.code,
+            "condition":forecast.condition,
+            "daymode":daymode,
+            "city":city,
+            "sun_rise_hour":sunrise.getHours(),
+            "sun_rise_min":sunrise.getMinutes(),
+            "sun_set_hour":sunset.getHours(),
+            "sun_set_min":sunset.getMinutes(),
+            "auto_daymode":auto_daymode,
+            "first_day":config.FirstDay,
+            "cal_offset":config.CalOffset,
+            "show_bt":config.ShowBT,
+            "bt_vibes":config.BTVibes,
+            "show_batt":config.ShowBatt,
+            "show_week":config.ShowWeek,
+            "show_steps":config.ShowSteps,
+            "loc_changed":locChanged,
+            "date_format":config.DateFormat,
+            "show_wind":config.ShowWind,
+            "wind_speed":formatSpeedms(windspeed_ms),
+            "forecast_hour":config.ForecastHour,
+            "forecast_min":config.ForecastMin,
+            "qt_start_hour":config.QTStartHour,
+            "qt_start_min":config.QTStartMin,
+            "qt_end_hour":config.QTEndHour,
+            "qt_end_min":config.QTEndMin,
+            "qt_bt_vibes":config.QTVibes,
+            "qt_fetch_weather":config.QTFetch,
+            "weather_update_interval":config.WeatherUpdateInterval,
+            "weather_fetched":1});
+
+      } else {
+        console.warn("Open-Meteo HTTP Error: " + reqWeather.status);
+        Pebble.sendAppMessage({
+          "city":"HTTP Err: " + reqWeather.status,
+          "weather_fetched":0});
+      }
+    }
+  };
+
+  if (DEBUG) {
+    console.log('Last update: ' + lastUpdate);
+    console.log('Forecast data: ' + JSON.stringify(forecast));
+  }
+
+  // Build Open-Meteo API URL
+  // Request current weather and daily forecast for today and tomorrow
+  var url = 'https://api.open-meteo.com/v1/forecast?' +
+    'latitude=' + lat +
+    '&longitude=' + lon +
+    '&current=temperature_2m,weather_code,wind_speed_10m' +
+    '&daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset' +
+    '&timezone=auto' +
+    '&forecast_days=2';
+
+  reqWeather.open('GET', url, true);
+  reqWeather.send(null);
 }
 
 // Fetch the weather data from the NWS (weather.gov) web service and transmit to Pebble

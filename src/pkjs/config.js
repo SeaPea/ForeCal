@@ -120,11 +120,11 @@ module.exports = [
         "defaultValue": "0",
         "options": [
           {
-            "label": "YAHOO!",
+            "label": "OpenWeatherMap.org",
             "value": "0"
           },
           {
-            "label": "OpenWeatherMap.org",
+            "label": "Open-Meteo",
             "value": "1"
           }
         ]

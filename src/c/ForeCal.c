@@ -763,6 +763,7 @@ static void sync_tuple_changed_callback(const uint32_t key, const Tuple* new_tup
       break;
     case BATTERY_PERCENT_KEY:
     case IS_CHARGING_KEY:
+    case TIME_24HR_KEY:
       // These keys are for watch->phone communication, ignore if received from phone
       break;
     default:
