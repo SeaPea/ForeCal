@@ -80,6 +80,7 @@ static bool endpoint_configured = false;
 static uint8_t last_battery_percent = 0;
 static bool last_is_charging = false;
 static uint8_t last_request_battery = 0;  // Track last request_battery value to detect transitions
+static bool battery_sync_pending = false;  // Track if battery sync is pending (waiting for app_sync to initialize)
 #if (defined(PBL_HEALTH) && defined(PBL_COLOR))
 static Layer *steps_layer = NULL;
 static bool steps_on = false;
@@ -185,6 +186,13 @@ static void send_battery_to_phone(uint8_t battery_percent, bool is_charging) {
     return;
   }
 
+  // If still loading (app_sync not initialized yet), mark as pending and return
+  if (loading) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "App sync not ready, marking battery sync as pending");
+    battery_sync_pending = true;
+    return;
+  }
+
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Sending battery to phone: %d%% (charging: %s)",
           battery_percent, is_charging ? "yes" : "no");
 
@@ -203,6 +211,15 @@ static void handle_weatherinit_timer(void *data) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Last Update: %ld", s_savedata.last_update);
   loading = false;
   weatherinit_timer = NULL;
+
+  // Send pending battery sync if any (battery changed while app_sync was initializing)
+  if (battery_sync_pending) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Sending pending battery sync: %d%% (charging: %s)",
+            last_battery_percent, last_is_charging ? "yes" : "no");
+    battery_sync_pending = false;
+    send_battery_to_phone(last_battery_percent, last_is_charging);
+  }
+
   init_weather();
 }
 
@@ -1457,9 +1474,9 @@ static void window_load(Window *window) {
     TupletInteger(WEATHER_UPDATE_INTERVAL_KEY, s_savedata.weather_update_interval),
     TupletInteger(WEATHER_FETCHED_KEY, 0),
     TupletInteger(REQUEST_BATTERY_KEY, 0),
-    TupletInteger(BATTERY_PERCENT_KEY, 0),
-    TupletInteger(ENDPOINT_CONFIGURED_KEY, 0),
-    TupletInteger(IS_CHARGING_KEY, 0)
+    TupletInteger(BATTERY_PERCENT_KEY, s_savedata.last_battery_percent),
+    TupletInteger(ENDPOINT_CONFIGURED_KEY, s_savedata.endpoint_configured ? 1 : 0),
+    TupletInteger(IS_CHARGING_KEY, s_savedata.last_is_charging ? 1 : 0)
   };
   
   // Initialize comms with phone
